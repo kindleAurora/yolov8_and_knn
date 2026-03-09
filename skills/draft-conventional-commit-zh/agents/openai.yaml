@@ -1,0 +1,4 @@
+interface:
+  display_name: "Conventional Commit 中文草拟"
+  short_description: "根据简短变更摘要生成中文 Conventional Commit 提交信息"
+  default_prompt: "根据我提供的变更摘要，生成符合 Conventional Commits 规范的中文提交信息。"

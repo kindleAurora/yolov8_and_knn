@@ -1,0 +1,666 @@
+﻿
+window.document.onkeydown = function () {
+    //监听enter事件
+    if (event.keyCode == 13) {
+        return false;
+    }
+    //屏蔽F5键 
+    if (event.keyCode == 116) {
+        return false;
+    }
+}
+
+$(function () {
+    $('[data-toggle="tooltip"]').tooltip();
+    //浏览器内容和判断
+    //IE浏览器 
+    if (Browser.Versions.trident) {
+        SweetAlert.Warning("不兼容当前版本浏览器");
+        location.href = "BrowserError.aspx";
+    }
+
+    $('#ddlXueYuan').select2({
+        placeholder: "请选择学院"
+    });
+    $('#ddlZhuanYe').select2({
+        placeholder: "请选择专业"
+    });
+    $('#ddlClass').select2({
+        placeholder: "请选择班级"
+    });
+});
+
+
+//验证
+var Check = {
+    //金钱格式数字验证
+    Money: function (value) {
+        var reg = /(^[1-9]([0-9]+)?(\.[0-9]{1,2})?$)|(^(0){1}$)|(^[0-9]\.[0-9]([0-9])?$)/;
+        return reg.test(value);
+    },
+    Number: function (control) {
+        if ($(control).val().length == 1) {
+            $(control).val($(control).val().replace(/[^0-9]/g, ''));
+        } else {
+            if ($(control).val().substring(0, 1) == "0") {
+                $(control).val("0");
+            }
+            else {
+                $(control).val($(control).val().replace(/\D/g, ''));
+            }
+        }
+    },
+    Age: function (control) {
+        if ($(control).val().length == 1) {
+            $(control).val($(control).val().replace(/[^1-9]/g, ''));
+        } else {
+            $(control).val($(control).val().replace(/\D/g, ''));
+        }
+    },
+    //验证电话号码
+    Phone: function (value) {
+        var reg = /^1[3|4|5|8][0-9]\d{4,8}$/;
+        return reg.test(value);
+    },
+    //验证邮箱
+    Email: function (value) {
+        console.log(value);
+        var reg = /\w@\w*\.\w/;
+        return reg.test(value);
+    },
+    //身份证验证
+    IDCard: function (idNumber) {
+        var reg = /(^\d{15}$)|(^\d{18}$)|(^\d{17}(\d|X|x)$)/;
+        return reg.test(idNumber);
+    },
+    //验证数字，num 小数位数
+    ValidationNumber: function (e, num) {
+        var regu = /^[0-9]+\.?[0-9]*$/;
+        if (e.value != "") {
+            if (!regu.test(e.value)) {
+                alert("请输入正确的数字");
+                e.value = e.value.substring(0, e.value.length - 1);
+                e.focus();
+            } else {
+                if (num == 0) {
+                    if (e.value.indexOf('.') > -1) {
+                        e.value = e.value.substring(0, e.value.length - 1);
+                        e.focus();
+                    }
+                }
+                if (e.value.indexOf('.') > -1) {
+                    if (e.value.split('.')[1].length > num) {
+                        e.value = e.value.substring(0, e.value.length - 1);
+                        e.focus();
+                    }
+                }
+
+            }
+        }
+    }
+}
+
+
+var Tools = {
+    //网络请求
+    Net: {
+        //Get请求
+        Get: function (_url, Response) {
+
+            //成功回调
+            var SuccessFunction = function (Result, State, JQXHR) {
+                Result = JsAESDecrypt(Result);
+                Response.Success(Result);
+            };
+            //失败回调
+            var ErrorFunction = function (Result, State, JQXHR) {
+                console.log(Result);
+            };
+            $.ajax({
+                type: "GET",
+                url: _url,
+                success: SuccessFunction,
+                error: ErrorFunction,
+                contentType: "text/plain; charset=utf-8"
+            });
+        },
+        //Post请求
+        Post: function (_url, Reqeuest, Response) {
+            //成功回调
+            var SuccessFunction = function (Result, State, JQXHR) { 
+                Result = JsAESDecrypt(Result);
+                Response.Success(Result);
+            };
+            //失败回调
+            var ErrorFunction = function (Result, State, JQXHR) {
+                console.log(Result);
+            };
+            $.ajax({
+                type: "POST",
+                url: _url,
+                data: "JsonData=" + escape(JSON.stringify(Reqeuest)),
+                success: SuccessFunction,
+                error: ErrorFunction
+            });
+        }
+    }
+}
+
+//替换html标签
+var ReplaceHtmlTag = function (value) {
+    value = value.replace(/(\n)/g, "");
+    value = value.replace(/(\t)/g, "");
+    value = value.replace(/(\r)/g, "");
+    value = value.replace(/<\/?[^>]*>/g, "");
+    value = value.replace(/\s*/g, "");
+    return value;
+}
+
+//sweetalert2 弹出框  http://www.cnblogs.com/beiz/p/5238124.html
+var SweetAlert = {
+    Success: function (title) {
+        swal({
+            title: title, //模态对话框的标题。它可以在参数对象的title参数中设置，也可以在swal()方法的第一个参数设置 
+            type: 'success', //对话框的情景类型。有5种内置的情景类型：warning，error，success，info和question。它可以在参数对象的type参数中设置，也可以在swal()方法的第三个参数设置。
+            allowOutsideClick: false, //是否允许点击对话框外部来关闭对话框。
+            confirmButtonText: "确定", //确认按钮上的文本。
+            confirmButtonColor: "#00acac" //确认按钮的颜色。必须是HEX颜色值。
+        });
+    },
+    Error: function (title) {
+        swal({
+            title: title, //模态对话框的标题。它可以在参数对象的title参数中设置，也可以在swal()方法的第一个参数设置 
+            type: 'error', //对话框的情景类型。有5种内置的情景类型：warning，error，success，info和question。它可以在参数对象的type参数中设置，也可以在swal()方法的第三个参数设置。
+            allowOutsideClick: false, //是否允许点击对话框外部来关闭对话框。
+            confirmButtonText: "确定", //确认按钮上的文本。
+            confirmButtonColor: "#00acac" //确认按钮的颜色。必须是HEX颜色值。
+        });
+    },
+    Warning: function (title) {
+        swal({
+            title: title, //模态对话框的标题。它可以在参数对象的title参数中设置，也可以在swal()方法的第一个参数设置 
+            type: 'warning', //对话框的情景类型。有5种内置的情景类型：warning，error，success，info 和 question 。它可以在参数对象的type参数中设置，也可以在swal()方法的第三个参数设置。
+            allowOutsideClick: false, //是否允许点击对话框外部来关闭对话框。
+            confirmButtonText: "确定", //确认按钮上的文本。
+            confirmButtonColor: "#00acac" //确认按钮的颜色。必须是HEX颜色值。
+        });
+    },
+    Info: function (title) {
+        swal({
+            title: title, //模态对话框的标题。它可以在参数对象的title参数中设置，也可以在swal()方法的第一个参数设置 
+            type: 'info', //对话框的情景类型。有5种内置的情景类型：warning，error，success，info 和 question 。它可以在参数对象的type参数中设置，也可以在swal()方法的第三个参数设置。
+            allowOutsideClick: false, //是否允许点击对话框外部来关闭对话框。
+            confirmButtonText: "确定", //确认按钮上的文本。
+            confirmButtonColor: "#00acac" //确认按钮的颜色。必须是HEX颜色值。
+        });
+    },
+    Question: function (title, FN) {
+        swal({
+            title: title, //模态对话框的标题。它可以在参数对象的title参数中设置，也可以在swal()方法的第一个参数设置 
+            type: "question", //对话框的情景类型。有5种内置的情景类型：warning，error，success，info 和 question 。它可以在参数对象的type参数中设置，也可以在swal()方法的第三个参数设置。
+            allowOutsideClick: false, //是否允许点击对话框外部来关闭对话框。
+            reverseButtons: false, //如果你想反向显示按钮的位置，设置该参数为true。
+            showCancelButton: true, //是否显示“Cancel（取消） 按钮。 默认false
+            confirmButtonText: "确定", //确认按钮上的文本。
+            confirmButtonColor: "#00acac", //确认按钮的颜色。必须是HEX颜色值。
+            cancelButtonText: '取消',
+            cancelButtonColor: '#aaa',
+        }).then(function (isConfirm) {
+            if (isConfirm == true) { //true：代表Confirm（确认）按钮  
+                FN();
+            } else if (isConfirm == false) { //false：代表Cancel（取消）按钮。
+                //以编程的方式关闭当前打开的SweetAlert2对话框。
+                swal.close();
+            } else {
+                //undefined：代表按下Esc键，点击取消按钮或在对话框之外点击。
+                //以编程的方式关闭当前打开的SweetAlert2对话框。
+                swal.close();
+            }
+        }).catch(swal.noop);
+    }
+}
+
+//选择框全选
+var SelectAll = function (control) {
+    if ($(control).prop("checked")) {
+        $('input[type="checkbox"]').not("#chkAll").each(function () {
+            $(this).prop("checked", "checked");
+        });
+    }
+    else {
+        $('input[type="checkbox"]').not("#chkAll").each(function () {
+            $(this).prop("checked", "");
+        });
+    }
+}
+
+///选择框是否存在某个值
+function Select_Is_Exists(selectid, value) {
+    var theid = '#' + selectid;
+    var count = $(theid).get(0).options.length;
+    var isExist = false;
+    for (var i = 0; i < count; i++) {
+        if ($(theid).get(0).options[i].value == value) {
+            isExist = true;
+            break;
+        }
+    }
+    return isExist;
+}
+
+
+//判断访问终端
+var Browser = {
+    Versions: function () {
+        var u = navigator.userAgent, app = navigator.appVersion;
+        return {
+            trident: u.indexOf('Trident') > -1, //IE内核
+            presto: u.indexOf('Presto') > -1, //opera内核
+            webKit: u.indexOf('AppleWebKit') > -1, //苹果、谷歌内核
+            gecko: u.indexOf('Gecko') > -1 && u.indexOf('KHTML') == -1,//火狐内核
+            mobile: !!u.match(/AppleWebKit.*Mobile.*/), //是否为移动终端
+            ios: !!u.match(/\(i[^;]+;( U;)? CPU.+Mac OS X/), //ios终端
+            android: u.indexOf('Android') > -1 || u.indexOf('Adr') > -1, //android终端
+            iPhone: u.indexOf('iPhone') > -1, //是否为iPhone或者QQHD浏览器
+            iPad: u.indexOf('iPad') > -1, //是否iPad
+            webApp: u.indexOf('Safari') == -1, //是否web应该程序，没有头部与底部
+            weixin: u.indexOf('MicroMessenger') > -1, //是否微信 （2015-01-22新增）
+            qq: u.match(/\sQQ/i) == " qq" //是否QQ
+        };
+    }(),
+    language: (navigator.browserLanguage || navigator.language).toLowerCase()
+}
+
+//删除动态行
+var DeleteTable = function (control) {
+    $(control).parent().parent().remove();
+}
+
+
+//验证页面输入
+var VerificationForm = function (form1) {
+    var fm = form1;
+    for (var i = 0; i < fm.length; i++) {
+        var id = fm[i].id;
+        if (id == "JieDuanNeiRong") {
+            id = "JieDuan";
+        }
+        else if (id == "") {
+            id = fm[i].name;
+        }
+
+        var title = fm[i].title;
+        if (title == "") continue;//忽略未定义title的元素
+        var p = title.lastIndexOf("~");
+        if (p < 0) continue;//忽略title中未定义检查格式的元素
+        var info = title.substring(0, p);
+        var format = title.substring(p + 1, title.length);
+        var name = fm[i].name;
+        if (name == "") continue;//忽略没有名字的元素
+        var value = trim(fm[i].value);
+
+        if ($('div[columnid="' + id + '"]').css("display") != "none") {
+            var notNull = false;
+            if (format.charAt(format.length - 1) == "!") {
+                notNull = true;
+                format = format.substring(0, format.length - 1);
+            }
+            if (notNull) {
+                if (value == "") {
+                    SweetAlert.Warning(info + "\n其内容不可以为空。");
+                    try {
+                        fm[i].focus();
+                    }
+                    catch (e) {
+                    }
+                    finally {
+
+                    }
+                    return false;
+                }
+            }
+            else { //内容可以为空时， 
+                if (value == "")
+                    continue;
+            }
+            var colonP = format.indexOf(":");
+            var lengthLimit = 0;
+            if (colonP > 0) {
+                lengthLimit = format.substring(colonP + 1, format.length);
+                format = format.substring(0, colonP);
+            }
+            console.log(lengthLimit);
+            console.log(format);
+
+            if (format == "email") {
+                //电子邮件格式
+                var found = value.match(/\w+@.+\..+/);
+                if (found == null) {
+                    SweetAlert.Warning(info + "\n其格式不正确:\n\"" + value + "\"不是一个Email地址");
+                    fm[i].focus();
+                    return false;
+                }
+            }
+            else if (format == "int") {
+                //整数
+                var intVal = parseInt(value);
+                if (isNaN(intVal) || intVal != value || intVal < 0) {
+                    SweetAlert.Warning(info + "\n其格式不正确:\n" + value + "不是一个大于等于0的正整数。");
+                    fm[i].focus();
+                    return false;
+                }
+                if (!isNaN(lengthLimit)) {
+                    if (parseInt(value) > parseInt(lengthLimit)) {
+                        SweetAlert.Warning(info + "\n其值(" + value + ")超过限制" + lengthLimit);
+                        fm[i].focus();
+                        return false;
+                    }
+                }
+            }
+            else if (format == "float") {
+                //浮点数
+                var floatVal = parseFloat(value);
+                if (isNaN(floatVal) || floatVal != value) {
+                    SweetAlert.Warning(info + "\n其格式不正确:\n" + value + "不是一个浮点数。");
+                    fm[i].focus();
+                    return false;
+                }
+            }
+            else if (format == "date") {
+                //日期
+                var found = value.match(/(\d{1,5})-(\d{1,2})-(\d{1,2})/);
+                var found2 = value.match(/(\d{1,5})\/(\d{1,2})\/(\d{1,2})/);
+                if (found == null || found[0] != value || found[2] > 12 || found[3] > 31) {
+                    if (found2 == null || found2[0] != value || found2[2] > 12 || found2[3] > 31) {
+                        SweetAlert.Warning(info + "\n其格式不正确:\n\"" + value + "\"不是一个日期\n提示：[2000-01-01]");
+                        fm[i].focus();
+                        return false;
+                    }
+                }
+                var year = trim0(found[1]);
+                var month = trim0(found[2]) - 1;
+                var date = trim0(found[3]);
+                var d = new Date(year, month, date);
+                if (d.getFullYear() != year || d.getMonth() != month || d.getDate() != date) {
+                    SweetAlert.Warning(info + "\n其内容不正确:\n\"" + value + "\"不是一个正确的日期\n提示：[2000-01-01]");
+                    fm[i].focus();
+                    return false;
+                }
+            }
+            else if (format == "time") {
+                //时间
+                var found = value.match(/(\d{2}):(\d{2}):(\d{2})/);
+                if (found == null || found[0] != value || found[1] > 23 || found[2] > 59 || found[3] > 59) {
+                    SweetAlert.Warning(info + "\n其格式不正确:\n\"" + value + "\"不是一个时间\n提示：[05:38:00]");
+                    fm[i].focus();
+                    return false;
+                }
+            }
+            else if (format == "hasChinese") {
+                var _hasChinese = false;
+                for (var j = 0; j < value.length; j++) {
+                    if (value.charCodeAt(j) > 255) {
+                        _hasChinese = true;
+                        break;
+                    }
+                }
+                if (!_hasChinese) {
+                    SweetAlert.Warning(info + "\n其内容需要中文:\n\"" + value + "\"不含有任何中文字符");
+                    fm[i].focus();
+                    return false;
+                }
+            }
+            else if (format == "allChinese") {
+                for (var j = 0; j < value.length; j++) {
+                    if (value.charCodeAt(j) <= 255) {
+                        SweetAlert.Warning(info + "\n其内容要求全中文:\n\"" + value + "\"含有非中文字符");
+                        fm[i].focus();
+                        return false;
+                    }
+                }
+            }
+            else if (format == "noChinese") {
+                for (var j = 0; j < value.length; j++) {
+                    if (value.charCodeAt(j) > 255) {
+                        SweetAlert.Warning(info + "\n其内容要求非中文:\n\"" + value + "\"含有中文字符");
+                        fm[i].focus();
+                        return false;
+                    }
+                }
+            }
+            //输入最小字数 minLength:200
+            else if (format == "minLength") {
+                //内容的值的大小判断
+                if (!isNaN(lengthLimit)) {
+                    if (value.length < parseInt(lengthLimit)) {
+                        SweetAlert.Warning(info + "\n其值输入不得少于" + lengthLimit + "字。");
+                        fm[i].focus();
+                        return false;
+                    }
+                }
+            }
+            else if (format != "") {
+                //自定义
+                try {
+                    var found = value.match(eval(format));
+                    if (found == null || found[0] != value) {
+                        SweetAlert.Warning(info + "\n其格式不不符合要求:\"" + value + "\"\n提示：[" + format + "]");
+                        fm[i].focus();
+                        return false;
+                    }
+                }
+                catch (e) {
+                    SweetAlert.Warning(e.name + ":\n不合法的正则式\"" + format + "\"");
+                    return false;
+                }
+            }
+        }
+    }
+    return true;
+}
+
+//显示遮罩
+var ShowShadowMask = function (title) {
+    KTApp.blockPage({
+        overlayColor: '#000000',
+        type: 'v2',
+        state: 'success',
+        message: title
+    });
+}
+
+//关闭遮罩
+var CloseShadowMask = function () {
+    KTApp.unblockPage();
+}
+
+//批量发布
+var BatchRelease = function (control) {
+    var flag = false;
+    $('input[type="checkbox"]').not("#chkAll").each(function () {
+        if ($(this).prop("checked")) {
+            flag = true;
+        }
+    });
+    if (!flag) {
+        SweetAlert.Warning("请选择数据");
+        return false;
+    }
+    SweetAlert.Question('确定发布选中数据么？', function () {
+        $(control).next().click();
+    });
+}
+
+///全部发布
+var AllRelease = function (control) {
+    SweetAlert.Question('确定全部发布么？', function () {
+        $(control).next().click();
+    });
+}
+
+//批量取消发布
+var BatchCancelRelease = function (control) {
+    var flag = false;
+    $('input[type="checkbox"]').not("#chkAll").each(function () {
+        if ($(this).prop("checked")) {
+            flag = true;
+        }
+    });
+    if (!flag) {
+        SweetAlert.Warning("请选择数据");
+        return false;
+    }
+    SweetAlert.Question('确定取消发布选中数据么？', function () {
+        $(control).next().click();
+    });
+}
+
+///全部取消发布
+var AllCancelRelease = function (control) {
+    SweetAlert.Question('确定全部取消发布么？', function () {
+        $(control).next().click();
+    });
+}
+
+//取消发布
+var CancelRelease = function (control) {
+    SweetAlert.Question('确定取消发布选中数据么？', function () {
+        $(control).next().click();
+    });
+}
+
+///批量审核通过
+var BatchPass = function (control) {
+    var flag = false;
+    $('input[type="checkbox"]').not("#chkAll").each(function () {
+        if ($(this).prop("checked")) {
+            flag = true;
+        }
+    });
+    if (!flag) {
+        SweetAlert.Warning("请选择数据");
+        return false;
+    }
+    SweetAlert.Question('确定审核通过选中数据么？', function () {
+        $(control).next().click();
+    });
+}
+
+///全部审核通过
+var AllPass = function (control) {
+    SweetAlert.Question('确定全部审核通过么？', function () {
+        $(control).next().click();
+    });
+}
+
+///批量退回
+var BatchBack = function (control) {
+    var flag = false;
+    $('input[type="checkbox"]').not("#chkAll").each(function () {
+        if ($(this).prop("checked")) {
+            flag = true;
+        }
+    });
+    if (!flag) {
+        SweetAlert.Warning("请选择数据");
+        return false;
+    }
+    SweetAlert.Question('确定审核退回选中数据么？', function () {
+        $(control).next().click();
+    });
+}
+
+//审核退回
+var AuditBack = function (control) {
+    SweetAlert.Question('确定审核退回选中数据么？', function () {
+        $(control).next().click();
+    });
+}
+
+//批量删除
+var BatchDelete = function (control) {
+    var flag = false;
+    $('input[type="checkbox"]').not("#chkAll").each(function () {
+        if ($(this).prop("checked")) {
+            flag = true;
+        }
+    });
+    if (!flag) {
+        SweetAlert.Warning("请选择数据");
+        return false;
+    }
+    SweetAlert.Question('确定删除选中数据么？', function () {
+        $(control).next().click();
+    });
+}
+
+//删除
+var Delete = function (control) {
+    SweetAlert.Question('确定删除选中数据么？', function () {
+        $(control).next().click();
+    });
+}
+
+//全部删除
+var AllDelete = function (control) {
+    SweetAlert.Question('确定全部删除么？', function () {
+        $(control).next().click();
+    });
+}
+
+
+//批量选择
+var BatchChoose = function (control) {
+    var flag = false;
+    $('input[type="checkbox"]').not("#chkAll").each(function () {
+        if ($(this).prop("checked")) {
+            flag = true;
+        }
+    });
+    if (!flag) {
+        SweetAlert.Warning("请选择数据");
+        return false;
+    }
+    SweetAlert.Question('确定选择选中数据么？', function () {
+        $(control).next().click();
+    });
+}
+
+///全部选择
+var AllChoose = function (control) {
+    SweetAlert.Question('确定全部选择么？', function () {
+        $(control).next().click();
+    });
+}
+
+//批量取消选择
+var BatchCancelChoose = function (control) {
+    var flag = false;
+    $('input[type="checkbox"]').not("#chkAll").each(function () {
+        if ($(this).prop("checked")) {
+            flag = true;
+        }
+    });
+    if (!flag) {
+        SweetAlert.Warning("请选择数据");
+        return false;
+    }
+    SweetAlert.Question('确定取消选择选中数据么？', function () {
+        $(control).next().click();
+    });
+}
+
+///全部取消选择
+var AllCancelChoose = function (control) {
+    SweetAlert.Question('确定全部取消选择么？', function () {
+        $(control).next().click();
+    });
+}
+
+//取消选择
+var CancelChoose = function (control) {
+    SweetAlert.Question('确定取消选择选中数据么？', function () {
+        $(control).next().click();
+    });
+}
+
