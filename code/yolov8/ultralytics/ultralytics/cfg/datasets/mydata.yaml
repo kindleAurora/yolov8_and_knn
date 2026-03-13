@@ -1,0 +1,18 @@
+path: C:/Users/17317/Desktop/毕设/all_datasets\archive (1)
+train: images/train
+val: images/validation
+
+nc: 11
+names:
+  0 : Dog
+  1 : Fox
+  2 : Cattle
+  3 : Goat
+  4 : Horse
+  5 : Pig
+  6 : Sheep
+  7 : Deer
+  8 : Bull
+  9 : Mule
+  10 : Alpaca
+  
