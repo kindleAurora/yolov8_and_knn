@@ -1,0 +1,30 @@
+[
+  {
+    "id": "task_20260316_152050",
+    "name": "transfer_120",
+    "command": "python tran.py",
+    "cwd": "C:\\Users\\Admin\\Desktop\\毕设\\code\\yolov8\\ultralytics",
+    "conda_env": "yolov8",
+    "status": "running",
+    "created_at": "2026-03-16 15:20:50",
+    "last_started_at": "2026-03-16 15:20:50",
+    "last_finished_at": null,
+    "return_code": null,
+    "log_file": "C:\\Users\\Admin\\Desktop\\毕设\\code\\yolov8\\ultralytics\\train_queue_logs\\task_20260316_152050.log",
+    "error": null
+  },
+  {
+    "id": "task_20260316_152050",
+    "name": "baseline_120",
+    "command": "python baseline.py",
+    "cwd": "C:\\Users\\Admin\\Desktop\\毕设\\code\\yolov8\\ultralytics",
+    "conda_env": "yolov8",
+    "status": "pending",
+    "created_at": "2026-03-16 15:20:50",
+    "last_started_at": null,
+    "last_finished_at": null,
+    "return_code": null,
+    "log_file": null,
+    "error": null
+  }
+]

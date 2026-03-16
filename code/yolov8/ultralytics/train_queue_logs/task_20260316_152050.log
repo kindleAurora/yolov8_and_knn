@@ -1,0 +1,4 @@
+[2026-03-16 15:20:50] START transfer_120
+COMMAND: cmd /d /c ""C:\ProgramData\miniconda3\condabin\conda.bat" run -n yolov8 python tran.py"
+CWD: C:\Users\Admin\Desktop\毕设\code\yolov8\ultralytics
+

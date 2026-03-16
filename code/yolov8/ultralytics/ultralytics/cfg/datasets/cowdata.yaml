@@ -1,0 +1,9 @@
+path: C:/Users/Admin/Desktop/毕设/all_datasets/cowDataset
+train: images/train
+val: images/val
+
+nc: 1
+names:
+  0 : cow
+
+  

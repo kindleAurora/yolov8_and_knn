@@ -1,0 +1,8 @@
+[2026-03-16 15:19:29] START baseline_120
+COMMAND: conda run -n yolov8 python baseline.py
+CWD: C:\Users\Admin\Desktop\毕设\code\yolov8\ultralytics
+
+'conda' �����ڲ����ⲿ���Ҳ���ǿ����еĳ���
+���������ļ���
+
+[2026-03-16 15:19:29] END return_code=1 duration=0.0s
