@@ -12,7 +12,7 @@ def main():
 
     model.train(
         data="cowdata.yaml",
-        epochs=150,
+        epochs=200,
         imgsz=832,
         batch=20,
         workers=6
