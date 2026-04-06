@@ -24,11 +24,11 @@ def imread_unicode(image_path: str | Path) -> np.ndarray:
 
 def resize_with_padding(image: np.ndarray, size: int = 64) -> np.ndarray:
     """Resize while keeping aspect ratio, then pad to a square canvas."""
-    height, width = image.shape[:2] #对于图像是高*宽
+    height, width = image.shape[:2]
     if height == 0 or width == 0:
         raise ValueError("Image height or width is zero.")
 
-    scale = min(size / width, size / height) #0.2
+    scale = min(size / width, size / height)
     resized_width = max(1, int(round(width * scale)))
     resized_height = max(1, int(round(height * scale)))
     resized = cv2.resize(image, (resized_width, resized_height), interpolation=cv2.INTER_AREA)
@@ -47,10 +47,10 @@ def extract_hog_feature(image: np.ndarray, image_size: int = 64) -> np.ndarray:
     We use HOG because it captures posture/shape better than raw pixels
     and works well with traditional classifiers like KNN.
     """
-    image_origin = image 
+    original_image = image
     image = resize_with_padding(image, image_size)
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    gray = cv2.GaussianBlur(gray, (3, 3), 0) #高斯模糊
+    gray = cv2.GaussianBlur(gray, (3, 3), 0)
 
     hog = cv2.HOGDescriptor(
         _winSize=(image_size, image_size),
@@ -61,7 +61,7 @@ def extract_hog_feature(image: np.ndarray, image_size: int = 64) -> np.ndarray:
     )
     hog_feature = hog.compute(gray).reshape(-1).astype(np.float32)
 
-    aspect_ratio = np.array([image_origin.shape[0] / max(image_origin.shape[1], 1)], dtype=np.float32)
+    aspect_ratio = np.array([original_image.shape[0] / max(original_image.shape[1], 1)], dtype=np.float32)
     feature = np.concatenate([hog_feature, aspect_ratio], axis=0)
     return feature
 
@@ -84,6 +84,32 @@ def load_image_paths(dataset_root: str | Path, class_names: Iterable[str]) -> tu
 
     if not image_paths:
         raise FileNotFoundError(f"No images found under dataset root: {dataset_root}")
+
+    return image_paths, labels
+
+
+def load_split_image_paths(dataset_root: str | Path, split_name: str, class_names: Iterable[str]) -> tuple[list[Path], list[int]]:
+    dataset_root = Path(dataset_root)
+    split_root = dataset_root / split_name
+    if not split_root.exists():
+        raise FileNotFoundError(f"Split directory not found: {split_root}")
+
+    image_paths: list[Path] = []
+    labels: list[int] = []
+
+    for class_index, class_name in enumerate(class_names):
+        class_dir = split_root / class_name
+        if not class_dir.exists():
+            raise FileNotFoundError(f"Class directory not found: {class_dir}")
+
+        class_images = sorted(
+            path for path in class_dir.iterdir() if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS
+        )
+        image_paths.extend(class_images)
+        labels.extend([class_index] * len(class_images))
+
+    if not image_paths:
+        raise FileNotFoundError(f"No images found under split directory: {split_root}")
 
     return image_paths, labels
 
@@ -130,10 +156,31 @@ def compute_class_accuracy(y_true: np.ndarray, y_pred: np.ndarray, class_names: 
     for class_index, class_name in enumerate(class_names):
         mask = y_true == class_index
         if not np.any(mask):
-            lines.append(f"{class_name}: no validation samples")
+            lines.append(f"{class_name}: no samples")
             continue
         accuracy = float(np.mean(y_pred[mask] == y_true[mask]))
         lines.append(f"{class_name}: {accuracy:.4f}")
+    return lines
+
+
+def compute_confusion_matrix(y_true: np.ndarray, y_pred: np.ndarray, num_classes: int) -> np.ndarray:
+    confusion_matrix = np.zeros((num_classes, num_classes), dtype=np.int32)
+    for true_label, pred_label in zip(y_true.astype(np.int32), y_pred.astype(np.int32)):
+        confusion_matrix[int(true_label), int(pred_label)] += 1
+    return confusion_matrix
+
+
+def format_confusion_matrix(confusion_matrix: np.ndarray, class_names: Iterable[str]) -> list[str]:
+    class_names = list(class_names)
+    cell_width = max(9, max(len(name) for name in class_names) + 2)
+
+    header = "true\\pred".ljust(cell_width) + "".join(name.rjust(cell_width) for name in class_names)
+    lines = [header]
+
+    for class_name, row in zip(class_names, confusion_matrix):
+        row_text = "".join(str(int(value)).rjust(cell_width) for value in row)
+        lines.append(class_name.ljust(cell_width) + row_text)
+
     return lines
 
 

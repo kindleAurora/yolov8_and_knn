@@ -39,11 +39,16 @@ def imwrite_unicode(image_path: Path, image: np.ndarray) -> None:
 
 def prepare_output_dirs() -> None:
     OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
-    for folder_name in CLASS_TO_FOLDER.values():
-        output_dir = OUTPUT_ROOT / folder_name
+    generated_dir_names = [*SPLITS, *CLASS_TO_FOLDER.values()]
+    for dir_name in generated_dir_names:
+        output_dir = OUTPUT_ROOT / dir_name
         if output_dir.exists():
             shutil.rmtree(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
+
+    for split_name in SPLITS:
+        for folder_name in CLASS_TO_FOLDER.values():
+            output_dir = OUTPUT_ROOT / split_name / folder_name
+            output_dir.mkdir(parents=True, exist_ok=True)
 
 
 def parse_label_file(label_path: Path) -> list[tuple[str, float, float, float, float]]:
@@ -109,8 +114,8 @@ def crop_and_save_annotations(image_path: Path, label_path: Path, split_name: st
             continue
 
         folder_name = CLASS_TO_FOLDER[class_id]
-        save_name = f"{split_name}_{image_path.stem}_{annotation_index:02d}{image_path.suffix.lower()}"
-        save_path = OUTPUT_ROOT / folder_name / save_name
+        save_name = f"{image_path.stem}_{annotation_index:02d}{image_path.suffix.lower()}"
+        save_path = OUTPUT_ROOT / split_name / folder_name / save_name
         imwrite_unicode(save_path, crop)
 
         saved_count += 1
@@ -126,7 +131,7 @@ def main() -> None:
     total_saved_crops = 0
     skipped_missing_labels = 0
     skipped_missing_split_dirs = 0
-    saved_by_class: Counter[str] = Counter()
+    saved_by_split: dict[str, Counter[str]] = {split_name: Counter() for split_name in SPLITS}
 
     for split_name in SPLITS:
         images_dir = DATASET_ROOT / split_name / "images"
@@ -154,7 +159,7 @@ def main() -> None:
                 image_path=image_path,
                 label_path=label_path,
                 split_name=split_name,
-                saved_by_class=saved_by_class,
+                saved_by_class=saved_by_split[split_name],
             )
             total_saved_crops += saved_count
 
@@ -163,9 +168,11 @@ def main() -> None:
     print(f"Total cropped cows saved: {total_saved_crops}")
     print(f"Skipped for missing labels: {skipped_missing_labels}")
     print(f"Skipped missing split directories: {skipped_missing_split_dirs}")
-    print("Saved crops by class:")
-    for class_name in CLASS_TO_FOLDER.values():
-        print(f"  {class_name}: {saved_by_class[class_name]}")
+    print("Saved crops by split/class:")
+    for split_name in SPLITS:
+        print(f"  {split_name}:")
+        for class_name in CLASS_TO_FOLDER.values():
+            print(f"    {class_name}: {saved_by_split[split_name][class_name]}")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,33 @@
+KNN behavior classification report
+Dataset root: C:\Users\Admin\Desktop\毕设\code\knn\bahavior_dateset
+Classes: ['lying', 'standing', 'walking']
+k: 9
+image_size: 64
+Train images: 5363
+Valid images: 666
+Test images: 648
+Train class distribution: {'lying': 1909, 'standing': 2540, 'walking': 914}
+Valid class distribution: {'lying': 232, 'standing': 324, 'walking': 110}
+Test class distribution: {'lying': 230, 'standing': 298, 'walking': 120}
+
+Valid result
+Overall accuracy: 0.8303
+lying: 0.9052
+standing: 0.7623
+walking: 0.8727
+Confusion matrix (rows=true, cols=pred):
+true\pred      lying  standing   walking
+lying            210        21         1
+standing          57       247        20
+walking            0        14        96
+
+Test result
+Overall accuracy: 0.8796
+lying: 0.9217
+standing: 0.8322
+walking: 0.9167
+Confusion matrix (rows=true, cols=pred):
+true\pred      lying  standing   walking
+lying            212        18         0
+standing          30       248        20
+walking            1         9       110
