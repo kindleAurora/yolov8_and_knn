@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EdgeReport",
+  "type": "object",
+  "required": [
+    "device_code",
+    "reported_at",
+    "model_name",
+    "model_version",
+    "payload"
+  ],
+  "properties": {
+    "device_code": {
+      "type": "string"
+    },
+    "reported_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "model_name": {
+      "type": "string"
+    },
+    "model_version": {
+      "type": "string"
+    },
+    "screenshot_uri": {
+      "type": ["string", "null"]
+    },
+    "video_clip_uri": {
+      "type": ["string", "null"]
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

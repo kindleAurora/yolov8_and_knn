@@ -1,0 +1,12 @@
+fastapi<1.0,>=0.115
+lap<1.0,>=0.5.12
+numpy<3.0,>=1.26
+opencv-python-headless<5.0,>=4.10
+pydantic-settings<3.0,>=2.8
+ultralytics<9.0,>=8.3
+uvicorn[standard]<1.0,>=0.34
+
+[dev]
+httpx<1.0,>=0.28
+pytest<9.0,>=8.3
+ruff<1.0,>=0.11

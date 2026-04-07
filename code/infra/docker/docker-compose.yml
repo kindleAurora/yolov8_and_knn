@@ -1,0 +1,107 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-cow_monitor}
+      POSTGRES_USER: ${POSTGRES_USER:-cow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cow}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cow} -d ${POSTGRES_DB:-cow_monitor}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+
+  inference-service:
+    build:
+      context: ../../..
+      dockerfile: code/inference-service/Dockerfile
+      args:
+        APT_MIRROR_HOST: ${APT_MIRROR_HOST:-mirrors.aliyun.com}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-pypi.tuna.tsinghua.edu.cn}
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      APP_NAME: ${INFERENCE_SERVICE_NAME:-cow-monitor-inference}
+      APP_VERSION: "0.1.0"
+      API_PREFIX: /api/v1/inference
+      PIPELINE_MODE: real
+      WORKSPACE_ROOT: /workspace
+      YOLO_MODEL_PATH: /workspace/runs/detect/cow_120_on_basecommon/weights/best.pt
+      KNN_MODEL_PATH: /workspace/code/knn/knn_behavior_model.npz
+    volumes:
+      - ../../../code/inference-service:/app
+      - ../../../:/workspace:ro
+    ports:
+      - "${INFERENCE_PORT:-8001}:8001"
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001", "--reload"]
+
+  api:
+    build:
+      context: ../../..
+      dockerfile: code/api/Dockerfile
+      args:
+        APT_MIRROR_HOST: ${APT_MIRROR_HOST:-mirrors.aliyun.com}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-pypi.tuna.tsinghua.edu.cn}
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      APP_NAME: ${APP_NAME:-牛只智能监控平台 API}
+      APP_VERSION: "0.1.0"
+      API_PREFIX: /api/v1
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-cow}:${POSTGRES_PASSWORD:-cow}@postgres:5432/${POSTGRES_DB:-cow_monitor}
+      REDIS_URL: redis://redis:6379/0
+      INFERENCE_SERVICE_URL: http://inference-service:8001
+      CORS_ORIGINS: ${API_CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      JWT_SECRET_KEY: ${API_JWT_SECRET_KEY:-stage2-dev-secret-key-with-32-bytes}
+      JWT_ALGORITHM: ${API_JWT_ALGORITHM:-HS256}
+      JWT_EXPIRE_MINUTES: ${API_JWT_EXPIRE_MINUTES:-480}
+    volumes:
+      - ../../../code/api:/app
+    ports:
+      - "${API_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      inference-service:
+        condition: service_started
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  web:
+    build:
+      context: ../../..
+      dockerfile: code/web/Dockerfile
+      args:
+        APK_MIRROR_HOST: ${APK_MIRROR_HOST:-mirrors.aliyun.com}
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+    restart: unless-stopped
+    environment:
+      VITE_APP_TITLE: ${VITE_APP_TITLE:-牛只智能监控平台}
+      VITE_API_BASE_URL: http://localhost:${API_PORT:-8000}
+    volumes:
+      - ../../../code/web:/app
+      - web_node_modules:/app/node_modules
+    ports:
+      - "${WEB_PORT:-5173}:5173"
+    depends_on:
+      api:
+        condition: service_started
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173"]
+
+volumes:
+  postgres_data:
+  web_node_modules:

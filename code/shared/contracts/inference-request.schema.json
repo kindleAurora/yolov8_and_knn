@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "InferenceRequest",
+  "type": "object",
+  "required": ["request_id", "source_type", "source_uri", "occurred_at"],
+  "properties": {
+    "request_id": {
+      "type": "string"
+    },
+    "source_type": {
+      "type": "string",
+      "enum": ["image", "video", "stream", "edge-report"]
+    },
+    "source_uri": {
+      "type": "string"
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "device_code": {
+      "type": ["string", "null"]
+    },
+    "frame_uri": {
+      "type": ["string", "null"]
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}
