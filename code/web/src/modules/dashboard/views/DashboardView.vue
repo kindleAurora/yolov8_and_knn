@@ -2,10 +2,10 @@
   <section class="page-shell">
     <header class="page-header">
       <div>
-        <p class="page-header__eyebrow">平台总览</p>
-        <h2>当前工作台</h2>
+        <p class="page-header__eyebrow">运营总览</p>
+        <h2>系统概览</h2>
         <p class="page-header__text">
-          当前版本已经打通推理服务接入、行为事件写库和前端展示的完整链路。
+          {{ APP_NAME }}用于集中查看设备接入、区域配置、行为事件与平台服务状态。
         </p>
       </div>
       <button class="ghost-button" type="button" @click="refreshAll">刷新数据</button>
@@ -15,22 +15,22 @@
       <article class="metric-card">
         <span>设备总数</span>
         <strong>{{ deviceCount }}</strong>
-        <p>{{ authStore.isAdmin ? '管理员可维护设备全生命周期。' : '普通用户在设备页为只读模式。' }}</p>
+        <p>{{ authStore.isAdmin ? '系统管理员可维护设备全生命周期。' : '观察账号在设备页为只读模式。' }}</p>
       </article>
       <article class="metric-card">
         <span>在线设备</span>
         <strong>{{ onlineDeviceCount }}</strong>
-        <p>基于当前设备状态列表实时统计。</p>
+        <p>根据当前设备运行状态自动汇总。</p>
       </article>
       <article class="metric-card">
         <span>区域总数</span>
         <strong>{{ zoneCount }}</strong>
-        <p>区域数据默认按当前农场隔离。</p>
+        <p>按当前农场范围隔离展示与维护。</p>
       </article>
       <article class="metric-card">
         <span>今日事件</span>
         <strong>{{ todayEventCount }}</strong>
-        <p>已写入数据库的当日行为事件数量。</p>
+        <p>统计当日已入库的行为事件记录。</p>
       </article>
     </section>
 
@@ -57,28 +57,28 @@
 
       <article class="panel">
         <header class="panel__header">
-          <h3>快捷入口</h3>
+          <h3>业务入口</h3>
         </header>
         <div class="action-list">
           <RouterLink class="action-card" to="/monitor">
-            <strong>进入画面监控</strong>
-            <span>查看在线摄像头预览，并在监控页切换主画面进行放大缩小。</span>
+            <strong>进入监控中心</strong>
+            <span>查看在线设备画面预览，并切换主监控画面。</span>
           </RouterLink>
           <RouterLink class="action-card" to="/devices">
-            <strong>进入设备管理</strong>
-            <span>查看设备档案、流地址与启停状态。</span>
+            <strong>进入设备资产</strong>
+            <span>维护设备档案、视频流地址与运行状态。</span>
           </RouterLink>
           <RouterLink class="action-card" to="/zones">
-            <strong>进入区域管理</strong>
-            <span>通过可视化画布绘制区域，并为指定设备绑定语义区域。</span>
+            <strong>进入区域配置</strong>
+            <span>通过可视化画布绘制区域，并为设备绑定业务语义。</span>
           </RouterLink>
           <RouterLink class="action-card" to="/events">
-            <strong>进入行为事件工作台</strong>
+            <strong>进入事件中心</strong>
             <span>调用推理服务、导入结果并查看最新行为事件。</span>
           </RouterLink>
           <a class="action-card" :href="docsUrl" target="_blank" rel="noreferrer">
-            <strong>查看接口文档</strong>
-            <span>检查 `/auth`、`/devices` 与 `/zones` 的契约细节。</span>
+            <strong>查看 API 文档</strong>
+            <span>检查 `/auth`、`/devices` 与 `/zones` 的接口契约。</span>
           </a>
         </div>
       </article>
@@ -90,11 +90,10 @@
         <RouterLink class="ghost-button" to="/monitor">打开画面监控</RouterLink>
       </header>
       <div v-if="previewDevices.length > 0" class="monitor-card-grid">
-        <DevicePreviewPanel
+        <DeviceLivePlayer
           v-for="device in previewDevices"
           :key="device.id"
           :device="device"
-          :refresh-ms="8000"
           compact
         />
       </div>
@@ -106,7 +105,7 @@
     <article class="panel">
       <header class="panel__header">
         <h3>最近行为事件</h3>
-        <RouterLink class="ghost-button" to="/events">打开事件工作台</RouterLink>
+        <RouterLink class="ghost-button" to="/events">打开事件中心</RouterLink>
       </header>
       <div class="stack-list">
         <article v-for="event in recentEvents" :key="event.id" class="entity-card">
@@ -138,7 +137,7 @@
           </dl>
         </article>
         <p v-if="recentEvents.length === 0" class="entity-note">
-          还没有行为事件记录，可以前往“行为事件工作台”导入一条推理结果。
+          还没有行为事件记录，可以前往“事件中心”导入一条推理结果。
         </p>
       </div>
     </article>
@@ -151,7 +150,8 @@ import { computed, onMounted, ref } from 'vue';
 import { listDevices } from '@/api/devices';
 import { fetchBehaviorEventSummary } from '@/api/events';
 import { listZones } from '@/api/zones';
-import DevicePreviewPanel from '@/components/monitor/DevicePreviewPanel.vue';
+import DeviceLivePlayer from '@/components/monitor/DeviceLivePlayer.vue';
+import { APP_NAME } from '@/config/branding';
 import { useAuthStore } from '@/stores/auth';
 import { usePlatformStore } from '@/stores/platform';
 import type { DeviceSummary } from '@/types/device';

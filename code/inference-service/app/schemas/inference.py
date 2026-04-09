@@ -51,5 +51,8 @@ class InferenceMetaResponse(BaseModel):
     available_inference_modes: list[Literal["yolo-knn", "yolo-only"]]
     default_inference_mode: Literal["yolo-knn", "yolo-only"]
     default_yolo_model_key: str | None = None
+    default_yolo_confidence: float
+    default_yolo_iou: float
+    default_knn_confidence_threshold: float
     available_yolo_models: list[YoloModelOption]
     knn_model_loaded: bool

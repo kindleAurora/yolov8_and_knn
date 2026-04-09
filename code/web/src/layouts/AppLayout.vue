@@ -2,31 +2,29 @@
   <div class="app-shell">
     <aside class="app-shell__sidebar">
       <div class="brand-block">
-        <p class="brand-block__eyebrow">阶段 3</p>
-        <h1>牛只智能监控平台</h1>
-        <p class="brand-block__text">
-          当前阶段已经打通推理服务接入、行为事件写库与结果展示链路。
-        </p>
+        <p class="brand-block__eyebrow">{{ APP_OPERATION_LABEL }}</p>
+        <h1>{{ APP_NAME }}</h1>
+        <p class="brand-block__text">{{ APP_SUBTITLE }}，{{ APP_DESCRIPTION }}</p>
       </div>
 
       <nav class="nav-links">
-        <RouterLink to="/" class="nav-link">总览</RouterLink>
-        <RouterLink to="/monitor" class="nav-link">画面监控</RouterLink>
-        <RouterLink to="/devices" class="nav-link">设备管理</RouterLink>
-        <RouterLink to="/zones" class="nav-link">区域管理</RouterLink>
-        <RouterLink to="/events" class="nav-link">行为事件</RouterLink>
+        <RouterLink to="/" class="nav-link">系统总览</RouterLink>
+        <RouterLink to="/monitor" class="nav-link">监控中心</RouterLink>
+        <RouterLink to="/devices" class="nav-link">设备资产</RouterLink>
+        <RouterLink to="/zones" class="nav-link">区域配置</RouterLink>
+        <RouterLink to="/events" class="nav-link">事件中心</RouterLink>
       </nav>
 
-      <a class="docs-link" :href="docsUrl" target="_blank" rel="noreferrer">打开接口文档</a>
+      <a class="docs-link" :href="docsUrl" target="_blank" rel="noreferrer">查看 API 文档</a>
     </aside>
 
     <main class="app-shell__main">
       <header class="topbar">
         <div>
-          <p class="topbar__label">当前登录</p>
+          <p class="topbar__label">当前账号</p>
           <strong>{{ authStore.currentUser?.display_name }}</strong>
           <span class="topbar__meta">
-            {{ authStore.currentUser?.farm.name }} / {{ authStore.isAdmin ? '管理员' : '普通用户' }}
+            {{ authStore.currentUser?.farm.name }} / {{ authStore.isAdmin ? '系统管理员' : '观察账号' }}
           </span>
         </div>
         <button class="ghost-button" type="button" @click="handleLogout">退出登录</button>
@@ -40,6 +38,7 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router';
 
+import { APP_DESCRIPTION, APP_NAME, APP_OPERATION_LABEL, APP_SUBTITLE } from '@/config/branding';
 import { useAuthStore } from '@/stores/auth';
 
 const authStore = useAuthStore();

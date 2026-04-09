@@ -8,7 +8,14 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.deps import get_current_user
+from app.core.event_preview_cache import (
+    PREVIEW_CACHE_KEY,
+    build_event_preview_cache_path,
+    resolve_event_preview_cache_path,
+    write_event_preview_cache,
+)
 from app.core.inference_client import fetch_inference_media, fetch_inference_preview
+from app.core.media_sources import resolve_inference_media_uri
 from app.core.models import BehaviorEvent, Device, User
 
 router = APIRouter(prefix="/media", tags=["媒体预览"])
@@ -77,6 +84,15 @@ def _proxy_media_response(query: dict[str, object]) -> Response:
     )
 
 
+def _read_numeric_metadata(raw_metadata: dict[str, object], key: str) -> float | None:
+    raw_value = raw_metadata.get(key)
+    if isinstance(raw_value, bool):
+        return None
+    if isinstance(raw_value, (int, float)):
+        return float(raw_value)
+    return None
+
+
 @router.get("/devices/{device_id}/preview")
 def get_device_preview(
     device_id: int,
@@ -87,7 +103,7 @@ def get_device_preview(
     return _proxy_preview_response(
         {
             "source_type": _infer_device_source_type(device.stream_url),
-            "source_uri": device.stream_url,
+            "source_uri": resolve_inference_media_uri(device.stream_url),
         }
     )
 
@@ -100,16 +116,52 @@ def get_event_preview(
 ) -> Response:
     event = _get_event_or_404(db, event_id=event_id, farm_id=current_user.farm_id)
     raw_metadata = event.raw_metadata if isinstance(event.raw_metadata, dict) else {}
+    cached_preview_path = resolve_event_preview_cache_path(raw_metadata)
+    if cached_preview_path is None:
+        warmed_preview_path = build_event_preview_cache_path(event.request_id)
+        if warmed_preview_path.exists():
+            cached_preview_path = warmed_preview_path
+    if cached_preview_path is not None:
+        return Response(
+            content=cached_preview_path.read_bytes(),
+            media_type="image/jpeg",
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
+
     yolo_model_key = raw_metadata.get("yolo_model_key")
-    return _proxy_preview_response(
-        {
-            "source_type": event.source_type,
-            "source_uri": event.source_uri,
-            "frame_uri": event.frame_uri,
-            "prefer_frame": True,
-            "annotated": True,
-            "yolo_model_key": yolo_model_key if isinstance(yolo_model_key, str) else None,
-        }
+    inference_mode = raw_metadata.get("inference_mode")
+    query = {
+        "source_type": event.source_type,
+        "source_uri": resolve_inference_media_uri(event.source_uri),
+        "frame_uri": resolve_inference_media_uri(event.frame_uri),
+        "prefer_frame": True,
+        "annotated": True,
+        "inference_mode": inference_mode if isinstance(inference_mode, str) else "yolo-only",
+        "yolo_model_key": yolo_model_key if isinstance(yolo_model_key, str) else None,
+        "yolo_confidence": _read_numeric_metadata(raw_metadata, "yolo_confidence"),
+        "yolo_iou": _read_numeric_metadata(raw_metadata, "yolo_iou"),
+        "knn_confidence_threshold": _read_numeric_metadata(raw_metadata, "knn_confidence_threshold"),
+    }
+
+    try:
+        payload, media_type, _content_disposition = fetch_inference_preview(query)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+    try:
+        if cached_preview_path is None:
+            preview_cache_path = write_event_preview_cache(event.request_id, payload)
+            raw_metadata[PREVIEW_CACHE_KEY] = preview_cache_path
+            event.raw_metadata = raw_metadata
+            db.add(event)
+            db.commit()
+    except OSError:
+        pass
+
+    return Response(
+        content=payload,
+        media_type=media_type or "image/jpeg",
+        headers={"Cache-Control": "no-store"},
     )
 
 

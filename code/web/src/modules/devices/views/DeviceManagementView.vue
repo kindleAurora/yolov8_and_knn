@@ -2,10 +2,10 @@
   <section class="page-shell">
     <header class="page-header">
       <div>
-        <p class="page-header__eyebrow">主数据管理</p>
+        <p class="page-header__eyebrow">设备资产管理</p>
         <h2>设备管理</h2>
         <p class="page-header__text">
-          管理员可以新增、编辑、停用和删除设备，普通用户可查看同一农场内的设备清单。
+          统一维护采集设备的基础档案、运行状态、视频流地址与扩展配置。
         </p>
       </div>
       <button class="ghost-button" type="button" @click="loadDevices">刷新列表</button>
@@ -87,15 +87,30 @@
           <h3>{{ editingId ? '编辑设备' : '新增设备' }}</h3>
           <button class="ghost-button" type="button" @click="resetForm">重置表单</button>
         </header>
+        <p class="entity-note">设备编号、设备名称和视频流地址为必填项，扩展配置需为合法 JSON 对象。</p>
 
         <form class="form-grid" @submit.prevent="submitForm">
           <label class="field">
             <span>设备编号</span>
-            <input v-model.trim="form.code" type="text" placeholder="例如：CAM-003" />
+            <input
+              v-model.trim="form.code"
+              type="text"
+              placeholder="例如：CAM-003"
+              minlength="2"
+              maxlength="64"
+              required
+            />
           </label>
           <label class="field">
             <span>设备名称</span>
-            <input v-model.trim="form.name" type="text" placeholder="例如：北侧牛舍摄像头" />
+            <input
+              v-model.trim="form.name"
+              type="text"
+              placeholder="例如：北侧牛舍摄像头"
+              minlength="2"
+              maxlength="120"
+              required
+            />
           </label>
           <label class="field">
             <span>设备类型</span>
@@ -107,7 +122,13 @@
           </label>
           <label v-if="deviceTypeMode === 'custom'" class="field">
             <span>自定义设备类型</span>
-            <input v-model.trim="customDeviceType" type="text" placeholder="请输入自定义设备类型" />
+            <input
+              v-model.trim="customDeviceType"
+              type="text"
+              placeholder="请输入自定义设备类型"
+              maxlength="32"
+              required
+            />
           </label>
           <label class="field">
             <span>运行状态</span>
@@ -119,11 +140,22 @@
           </label>
           <label class="field field--full">
             <span>视频流地址</span>
-            <input v-model.trim="form.stream_url" type="text" placeholder="例如：rtsp://demo.local/cam-003" />
+            <input
+              v-model.trim="form.stream_url"
+              type="text"
+              placeholder="例如：rtsp://demo.local/cam-003"
+              minlength="4"
+              required
+            />
           </label>
           <label class="field">
             <span>安装位置</span>
-            <input v-model.trim="form.install_location" type="text" placeholder="例如：北侧牛舍" />
+            <input
+              v-model.trim="form.install_location"
+              type="text"
+              placeholder="例如：北侧牛舍"
+              maxlength="255"
+            />
           </label>
           <label class="field">
             <span>启用开关</span>
@@ -190,6 +222,14 @@ const deviceTypeOptions: Array<{ label: string; value: DeviceTypeMode }> = [
   { label: '自定义类型', value: 'custom' },
 ];
 
+const DEVICE_CODE_MIN_LENGTH = 2;
+const DEVICE_CODE_MAX_LENGTH = 64;
+const DEVICE_NAME_MIN_LENGTH = 2;
+const DEVICE_NAME_MAX_LENGTH = 120;
+const DEVICE_TYPE_MAX_LENGTH = 32;
+const INSTALL_LOCATION_MAX_LENGTH = 255;
+const STREAM_URL_MIN_LENGTH = 4;
+
 const form = reactive<DeviceFormState>(createEmptyForm());
 
 function createEmptyForm(): DeviceFormState {
@@ -246,6 +286,9 @@ function resolveDeviceType() {
     if (!value) {
       throw new Error('请输入自定义设备类型。');
     }
+    if (value.length > DEVICE_TYPE_MAX_LENGTH) {
+      throw new Error(`自定义设备类型不能超过 ${DEVICE_TYPE_MAX_LENGTH} 个字符。`);
+    }
     return value;
   }
 
@@ -253,20 +296,52 @@ function resolveDeviceType() {
 }
 
 function normalizeConfig(): Record<string, unknown> {
-  const parsed = JSON.parse(form.configJson) as unknown;
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(form.configJson);
+  } catch {
+    throw new Error('扩展配置 JSON 格式不正确，请检查引号、逗号和括号。');
+  }
+
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new Error('扩展配置 JSON 必须是对象。');
   }
   return parsed as Record<string, unknown>;
 }
 
+function validateTextField(
+  value: string,
+  label: string,
+  minLength: number,
+  maxLength?: number,
+) {
+  const normalizedValue = value.trim();
+  if (normalizedValue.length < minLength) {
+    throw new Error(`${label}至少需要 ${minLength} 个字符。`);
+  }
+  if (maxLength && normalizedValue.length > maxLength) {
+    throw new Error(`${label}不能超过 ${maxLength} 个字符。`);
+  }
+  return normalizedValue;
+}
+
 function buildPayload(): DevicePayload {
+  const code = validateTextField(form.code, '设备编号', DEVICE_CODE_MIN_LENGTH, DEVICE_CODE_MAX_LENGTH);
+  const name = validateTextField(form.name, '设备名称', DEVICE_NAME_MIN_LENGTH, DEVICE_NAME_MAX_LENGTH);
+  const streamUrl = validateTextField(form.stream_url, '视频流地址', STREAM_URL_MIN_LENGTH);
+  const installLocation = form.install_location.trim();
+
+  if (installLocation.length > INSTALL_LOCATION_MAX_LENGTH) {
+    throw new Error(`安装位置不能超过 ${INSTALL_LOCATION_MAX_LENGTH} 个字符。`);
+  }
+
   return {
-    code: form.code,
-    name: form.name,
+    code,
+    name,
     device_type: resolveDeviceType(),
-    stream_url: form.stream_url,
-    install_location: form.install_location || null,
+    stream_url: streamUrl,
+    install_location: installLocation || null,
     status: form.status,
     is_enabled: enabledValue.value === 'true',
     config: normalizeConfig(),

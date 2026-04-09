@@ -1,5 +1,13 @@
 <template>
-  <article :class="['monitor-preview', { 'monitor-preview--compact': compact }]">
+  <article
+    :class="[
+      'monitor-preview',
+      {
+        'monitor-preview--compact': compact,
+        'monitor-preview--interactive': showControls,
+      },
+    ]"
+  >
     <header class="monitor-preview__header">
       <div>
         <p class="monitor-preview__eyebrow">{{ device.code }}</p>
@@ -13,14 +21,32 @@
       </span>
     </header>
 
-    <div class="monitor-preview__stage">
-      <img
-        v-if="previewUrl"
-        :src="previewUrl"
-        :alt="`${device.name} 监控预览`"
-        class="monitor-preview__image"
-        :style="imageStyle"
-      />
+    <div
+      ref="stageElement"
+      :class="[
+        'monitor-preview__stage',
+        {
+          'monitor-preview__stage--interactive': showControls,
+          'monitor-preview__stage--draggable': canPan,
+          'monitor-preview__stage--dragging': isDragging,
+        },
+      ]"
+      :style="stageInteractionStyle"
+      @pointerdown="startDrag"
+      @pointermove="updateDrag"
+      @pointerup="endDrag"
+      @pointercancel="endDrag"
+    >
+      <div v-if="previewUrl" class="monitor-preview__pan-layer" :style="panStyle">
+        <img
+          ref="imageElement"
+          :src="previewUrl"
+          :alt="`${device.name} 监控预览`"
+          class="monitor-preview__image"
+          :style="mediaStyle"
+          @load="handleImageLoad"
+        />
+      </div>
       <div v-else class="monitor-preview__empty">
         <strong>{{ loading ? '正在抓取画面...' : '暂无可用画面' }}</strong>
         <p>{{ previewError || '请检查视频流地址是否可访问，或稍后重试。' }}</p>
@@ -51,6 +77,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 import { fetchDevicePreview } from '@/api/media';
+import { useMediaViewportInteraction } from '@/composables/useMediaViewportInteraction';
 import type { DeviceSummary } from '@/types/device';
 
 const props = withDefaults(
@@ -68,17 +95,19 @@ const props = withDefaults(
 );
 
 const previewUrl = ref('');
+const imageElement = ref<HTMLImageElement | null>(null);
+const stageElement = ref<HTMLElement | null>(null);
 const loading = ref(false);
 const previewError = ref('');
 const zoom = ref(1);
 const fitMode = ref<'contain' | 'cover'>('contain');
+const intrinsicSize = ref({ width: 0, height: 0 });
+const offsetX = ref(0);
+const offsetY = ref(0);
+const isDragging = ref(false);
 
 let refreshTimer: number | null = null;
 
-const imageStyle = computed(() => ({
-  objectFit: fitMode.value,
-  transform: `scale(${zoom.value})`,
-}));
 const statusLabel = computed(() => {
   if (props.device.status === 'online') {
     return '设备在线';
@@ -106,12 +135,42 @@ const previewStatusTone = computed(() => {
   }
   return 'up';
 });
+const {
+  canPan,
+  endDrag,
+  mediaStyle,
+  panStyle,
+  resetViewport,
+  stageInteractionStyle,
+  startDrag,
+  updateDrag,
+} = useMediaViewportInteraction({
+  fitMode,
+  zoom,
+  stageRef: stageElement,
+  intrinsicSize,
+  offsetX,
+  offsetY,
+  isDragging,
+});
 
 function revokePreviewUrl() {
   if (previewUrl.value) {
     URL.revokeObjectURL(previewUrl.value);
     previewUrl.value = '';
   }
+}
+
+function handleImageLoad() {
+  const image = imageElement.value;
+  if (!image) {
+    return;
+  }
+
+  intrinsicSize.value = {
+    width: image.naturalWidth,
+    height: image.naturalHeight,
+  };
 }
 
 async function loadPreview() {
@@ -161,6 +220,7 @@ function zoomOut() {
 
 function setFitMode(mode: 'contain' | 'cover') {
   fitMode.value = mode;
+  resetViewport();
 }
 
 watch(
@@ -168,6 +228,8 @@ watch(
   () => {
     zoom.value = 1;
     fitMode.value = 'contain';
+    intrinsicSize.value = { width: 0, height: 0 };
+    resetViewport();
     startRefreshLoop();
   },
 );

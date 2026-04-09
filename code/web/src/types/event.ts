@@ -15,6 +15,9 @@ export interface InferenceMeta {
   available_inference_modes: InferenceMode[];
   default_inference_mode: InferenceMode;
   default_yolo_model_key: string | null;
+  default_yolo_confidence: number;
+  default_yolo_iou: number;
+  default_knn_confidence_threshold: number;
   available_yolo_models: InferenceModelOption[];
   knn_model_loaded: boolean;
 }

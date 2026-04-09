@@ -2,10 +2,10 @@
   <section class="page-shell">
     <header class="page-header">
       <div>
-        <p class="page-header__eyebrow">阶段 3</p>
-        <h2>行为事件工作台</h2>
+        <p class="page-header__eyebrow">事件中心</p>
+        <h2>行为事件中心</h2>
         <p class="page-header__text">
-          将图片、视频流或边缘来源送入推理服务，并把结构化结果写入行为事件库。
+          查看已入库的行为事件，并对历史图片、视频或边缘回传数据做补录推理与校验。
         </p>
       </div>
       <button class="ghost-button" type="button" @click="refreshAll">刷新数据</button>
@@ -15,12 +15,12 @@
       <article class="metric-card">
         <span>累计事件</span>
         <strong>{{ summary.total_count }}</strong>
-        <p>当前农场内已写入的结构化行为事件总数。</p>
+        <p>当前牧场内已写入的结构化行为事件总数。</p>
       </article>
       <article class="metric-card">
         <span>今日事件</span>
         <strong>{{ summary.today_count }}</strong>
-        <p>按当前农场时区统计的当日行为事件数量。</p>
+        <p>按当前牧场时区统计的当日行为事件数量。</p>
       </article>
       <article class="metric-card">
         <span>最近模型</span>
@@ -37,9 +37,13 @@
     <div class="content-grid event-content-grid">
       <article class="panel">
         <header class="panel__header">
-          <h3>导入推理结果</h3>
+          <h3>补录 / 校验推理</h3>
           <button class="ghost-button" type="button" @click="resetForm">重置表单</button>
         </header>
+
+        <p class="summary">
+          实时摄像头分析入口已经放在“画面监控”页。本页主要用于补录历史文件、校验边缘回传结果，或对指定来源做一次性人工复核。
+        </p>
 
         <form class="form-grid" @submit.prevent="submitImport">
           <label class="field">
@@ -80,6 +84,28 @@
             </select>
           </label>
 
+          <label class="field">
+            <span>YOLO 置信度阈值</span>
+            <input v-model.number="form.yoloConfidence" type="number" min="0" max="1" step="0.05" />
+          </label>
+
+          <label class="field">
+            <span>YOLO IoU 阈值</span>
+            <input v-model.number="form.yoloIou" type="number" min="0" max="1" step="0.05" />
+          </label>
+
+          <label class="field">
+            <span>KNN 置信度阈值</span>
+            <input
+              v-model.number="form.knnConfidenceThreshold"
+              type="number"
+              min="0"
+              max="1"
+              step="0.05"
+              :disabled="form.inferenceMode !== 'yolo-knn'"
+            />
+          </label>
+
           <label class="field field--full">
             <span>来源地址</span>
             <input
@@ -108,7 +134,7 @@
             <textarea
               v-model="form.metadataJson"
               rows="8"
-              placeholder='{"remark":"阶段3演示导入"}'
+              placeholder='{"remark":"人工复核导入"}'
             />
           </label>
 
@@ -120,7 +146,7 @@
           <p v-if="inferenceMetaError" class="error-text">{{ inferenceMetaError }}</p>
 
           <button class="primary-button" type="submit" :disabled="submitting || devices.length === 0">
-            {{ submitting ? '导入中...' : '调用推理并写入事件' }}
+            {{ submitting ? '处理中...' : '执行补录推理并写入事件' }}
           </button>
         </form>
 
@@ -160,7 +186,7 @@
         <div class="stack-list">
           <article v-for="event in events" :key="event.id" class="entity-card">
             <div class="event-visual-card">
-              <EventMediaViewer :event="event" />
+              <EventMediaViewer :event="event" lazy />
 
               <div class="event-visual-card__content">
                 <div class="entity-card__header">
@@ -204,7 +230,7 @@
           </article>
 
           <p v-if="events.length === 0" class="entity-note">
-            当前还没有行为事件，可以先在左侧导入一条推理结果。
+            当前还没有行为事件，可以先在画面监控中直接分析实时画面，或在左侧补录一条历史推理结果。
           </p>
         </div>
       </article>
@@ -236,6 +262,9 @@ interface ImportFormState {
   occurredAtLocal: string;
   frameUri: string;
   metadataJson: string;
+  yoloConfidence: number;
+  yoloIou: number;
+  knnConfidenceThreshold: number;
 }
 
 const devices = ref<DeviceSummary[]>([]);
@@ -254,9 +283,10 @@ const submitting = ref(false);
 
 const filters = reactive({
   deviceId: '',
-  limit: '10',
+  limit: '5',
 });
 
+let thresholdDefaultsInitialized = false;
 const form = reactive<ImportFormState>(createEmptyForm());
 
 const latestModel = computed(() => summary.value.recent_events[0]?.model_name ?? '暂无');
@@ -276,8 +306,20 @@ const sourceUriPlaceholder = computed(() => {
 });
 const inferenceModeHint = computed(() =>
   form.inferenceMode === 'yolo-knn'
-    ? '当前为“YOLO + KNN”模式：先检测牛只，再做姿态/行为分类。'
+    ? '当前为“YOLO + KNN”模式：先检测牛只，再做姿态 / 行为分类。'
     : '当前为“仅 YOLO”模式：仅依据 YOLO 检测结果生成事件统计。',
+);
+const resolvedYoloConfidence = computed(() =>
+  normalizeThreshold(form.yoloConfidence, inferenceMeta.value?.default_yolo_confidence ?? 0.25),
+);
+const resolvedYoloIou = computed(() =>
+  normalizeThreshold(form.yoloIou, inferenceMeta.value?.default_yolo_iou ?? 0.45),
+);
+const resolvedKnnConfidenceThreshold = computed(() =>
+  normalizeThreshold(
+    form.knnConfidenceThreshold,
+    inferenceMeta.value?.default_knn_confidence_threshold ?? 0,
+  ),
 );
 
 function formatNowForInput() {
@@ -285,6 +327,14 @@ function formatNowForInput() {
   const timezoneOffset = currentDate.getTimezoneOffset();
   const localDate = new Date(currentDate.getTime() - timezoneOffset * 60 * 1000);
   return localDate.toISOString().slice(0, 16);
+}
+
+function normalizeThreshold(value: number, fallback: number) {
+  if (!Number.isFinite(value)) {
+    return fallback;
+  }
+
+  return Math.min(1, Math.max(0, value));
 }
 
 function createEmptyForm(): ImportFormState {
@@ -296,7 +346,10 @@ function createEmptyForm(): ImportFormState {
     sourceUri: '',
     occurredAtLocal: formatNowForInput(),
     frameUri: '',
-    metadataJson: '{\n  "remark": "阶段3演示导入"\n}',
+    metadataJson: '{\n  "remark": "人工复核导入"\n}',
+    yoloConfidence: inferenceMeta.value?.default_yolo_confidence ?? 0.25,
+    yoloIou: inferenceMeta.value?.default_yolo_iou ?? 0.45,
+    knnConfidenceThreshold: inferenceMeta.value?.default_knn_confidence_threshold ?? 0,
   };
 }
 
@@ -329,6 +382,15 @@ function parseMetadata() {
   return parsed as Record<string, unknown>;
 }
 
+function buildImportMetadata() {
+  return {
+    ...parseMetadata(),
+    yolo_confidence: resolvedYoloConfidence.value,
+    yolo_iou: resolvedYoloIou.value,
+    knn_confidence_threshold: resolvedKnnConfidenceThreshold.value,
+  };
+}
+
 function normalizeWorkspacePath(value: string) {
   const trimmed = value.trim();
   if (trimmed.startsWith('workspace/')) {
@@ -349,6 +411,12 @@ function applyInferenceDefaults() {
     !inferenceMeta.value.available_inference_modes.includes(form.inferenceMode)
   ) {
     form.inferenceMode = inferenceMeta.value.default_inference_mode;
+  }
+  if (!thresholdDefaultsInitialized && inferenceMeta.value) {
+    form.yoloConfidence = inferenceMeta.value.default_yolo_confidence;
+    form.yoloIou = inferenceMeta.value.default_yolo_iou;
+    form.knnConfidenceThreshold = inferenceMeta.value.default_knn_confidence_threshold;
+    thresholdDefaultsInitialized = true;
   }
 }
 
@@ -412,7 +480,7 @@ async function refreshAll() {
   try {
     await Promise.all([loadDevices(), loadInferenceMeta(), loadSummary(), loadEvents()]);
   } catch (error) {
-    loadError.value = error instanceof Error ? error.message : '无法加载阶段 3 行为事件数据。';
+    loadError.value = error instanceof Error ? error.message : '无法加载行为事件数据。';
   }
 }
 
@@ -439,7 +507,7 @@ async function submitImport() {
       occurred_at: occurredAt.toISOString(),
       frame_uri: form.frameUri ? normalizeWorkspacePath(form.frameUri) : null,
       yolo_model_key: form.yoloModelKey || null,
-      metadata: parseMetadata(),
+      metadata: buildImportMetadata(),
     });
 
     submitMessage.value = `已导入 ${result.imported_count} 条行为事件，模型 ${result.model_name} 已完成写库。`;

@@ -17,6 +17,54 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
+function formatValidationLocation(location: unknown) {
+  if (!Array.isArray(location)) {
+    return '';
+  }
+
+  const parts = location
+    .filter((item): item is string | number => typeof item === 'string' || typeof item === 'number')
+    .map(String)
+    .filter((item) => item !== 'body');
+
+  return parts.join('.');
+}
+
+function extractErrorMessage(responseBody: unknown, statusCode: number) {
+  let message = `请求失败，状态码 ${statusCode}`;
+
+  if (!isRecord(responseBody)) {
+    return message;
+  }
+
+  if (typeof responseBody.detail === 'string') {
+    return responseBody.detail;
+  }
+
+  if (Array.isArray(responseBody.detail)) {
+    const issues = responseBody.detail
+      .map((issue) => {
+        if (!isRecord(issue) || typeof issue.msg !== 'string') {
+          return null;
+        }
+
+        const location = formatValidationLocation(issue.loc);
+        return location ? `${location}：${issue.msg}` : issue.msg;
+      })
+      .filter((issue): issue is string => Boolean(issue));
+
+    if (issues.length > 0) {
+      return `数据校验失败：${issues.join('；')}`;
+    }
+  }
+
+  if (typeof responseBody.message === 'string') {
+    return responseBody.message;
+  }
+
+  return message;
+}
+
 async function performApiFetch(path: string, options: ApiRequestOptions = {}): Promise<Response> {
   const { auth = true, headers, body, ...rest } = options;
   const requestHeaders = new Headers(headers);
@@ -68,15 +116,7 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
   const responseBody = contentType.includes('application/json') ? ((await response.json()) as unknown) : null;
 
   if (!response.ok) {
-    let message = `请求失败，状态码 ${response.status}`;
-    if (isRecord(responseBody)) {
-      if (typeof responseBody.detail === 'string') {
-        message = responseBody.detail;
-      } else if (typeof responseBody.message === 'string') {
-        message = responseBody.message;
-      }
-    }
-    throw new Error(message);
+    throw new Error(extractErrorMessage(responseBody, response.status));
   }
 
   if (!isRecord(responseBody)) {
@@ -90,21 +130,14 @@ export async function apiBlob(path: string, options: ApiRequestOptions = {}): Pr
   const response = await performApiFetch(path, options);
 
   if (!response.ok) {
-    let message = `请求失败，状态码 ${response.status}`;
     const contentType = response.headers.get('content-type') ?? '';
+    let responseBody: unknown = null;
 
     if (contentType.includes('application/json')) {
-      const responseBody = (await response.json()) as unknown;
-      if (isRecord(responseBody)) {
-        if (typeof responseBody.detail === 'string') {
-          message = responseBody.detail;
-        } else if (typeof responseBody.message === 'string') {
-          message = responseBody.message;
-        }
-      }
+      responseBody = (await response.json()) as unknown;
     }
 
-    throw new Error(message);
+    throw new Error(extractErrorMessage(responseBody, response.status));
   }
 
   return response.blob();

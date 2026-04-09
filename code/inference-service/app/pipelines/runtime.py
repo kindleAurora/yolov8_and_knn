@@ -204,6 +204,9 @@ def get_inference_meta() -> InferenceMetaResponse:
         available_inference_modes=SUPPORTED_INFERENCE_MODES,
         default_inference_mode="yolo-knn",
         default_yolo_model_key=default_key,
+        default_yolo_confidence=settings.yolo_confidence,
+        default_yolo_iou=settings.yolo_iou,
+        default_knn_confidence_threshold=settings.knn_confidence_threshold,
         available_yolo_models=available_models,
         knn_model_loaded=settings.knn_model_path.exists(),
     )
@@ -237,6 +240,132 @@ def _load_runtime_dependencies() -> tuple[Any, Any, Any]:
     return cv2, np, YOLO
 
 
+@lru_cache(maxsize=1)
+def _load_torch_dependency() -> Any | None:
+    try:
+        import torch  # type: ignore[import-not-found]
+    except Exception:
+        return None
+    return torch
+
+
+@lru_cache(maxsize=1)
+def _resolve_compute_device() -> str:
+    preferred_device = settings.inference_device.strip().lower()
+    if preferred_device and preferred_device != "auto":
+        return settings.inference_device
+
+    torch = _load_torch_dependency()
+    if torch is not None and torch.cuda.is_available():
+        return "cuda:0"
+
+    return "cpu"
+
+
+def _resolve_numeric_setting(
+    raw_value: object,
+    *,
+    default_value: float,
+    min_value: float = 0.0,
+    max_value: float = 1.0,
+) -> float:
+    candidate: float | None = None
+    if isinstance(raw_value, bool):
+        candidate = None
+    elif isinstance(raw_value, (int, float)):
+        candidate = float(raw_value)
+    elif isinstance(raw_value, str):
+        try:
+            candidate = float(raw_value.strip())
+        except ValueError:
+            candidate = None
+
+    if candidate is None:
+        return default_value
+
+    return max(min(candidate, max_value), min_value)
+
+
+def _resolve_request_budget(
+    payload: InferenceRequest,
+    *,
+    metadata_key: str,
+    default_value: int,
+) -> int:
+    raw_value = payload.metadata.get(metadata_key)
+    if isinstance(raw_value, bool):
+        return default_value
+    if isinstance(raw_value, int):
+        return max(raw_value, 1)
+    if isinstance(raw_value, float):
+        return max(int(raw_value), 1)
+    return default_value
+
+
+def _resolve_max_video_frames(payload: InferenceRequest) -> int:
+    analysis_profile = str(payload.metadata.get("analysis_profile", "")).strip().lower()
+    default_value = (
+        settings.realtime_max_video_frames
+        if analysis_profile == "realtime"
+        else settings.max_video_frames
+    )
+    return _resolve_request_budget(
+        payload,
+        metadata_key="max_video_frames",
+        default_value=default_value,
+    )
+
+
+def _resolve_frame_stride(payload: InferenceRequest) -> int:
+    analysis_profile = str(payload.metadata.get("analysis_profile", "")).strip().lower()
+    default_value = (
+        settings.realtime_frame_stride
+        if analysis_profile == "realtime"
+        else settings.frame_stride
+    )
+    return _resolve_request_budget(
+        payload,
+        metadata_key="frame_stride",
+        default_value=default_value,
+    )
+
+
+def _resolve_request_threshold(
+    payload: InferenceRequest,
+    *,
+    metadata_key: str,
+    default_value: float,
+) -> float:
+    return _resolve_numeric_setting(
+        payload.metadata.get(metadata_key),
+        default_value=default_value,
+    )
+
+
+def _resolve_yolo_confidence(payload: InferenceRequest) -> float:
+    return _resolve_request_threshold(
+        payload,
+        metadata_key="yolo_confidence",
+        default_value=settings.yolo_confidence,
+    )
+
+
+def _resolve_yolo_iou(payload: InferenceRequest) -> float:
+    return _resolve_request_threshold(
+        payload,
+        metadata_key="yolo_iou",
+        default_value=settings.yolo_iou,
+    )
+
+
+def _resolve_knn_confidence_threshold(payload: InferenceRequest) -> float:
+    return _resolve_request_threshold(
+        payload,
+        metadata_key="knn_confidence_threshold",
+        default_value=settings.knn_confidence_threshold,
+    )
+
+
 def _load_knn_tools() -> tuple[Any, Any, Any]:
     knn_root = settings.workspace_root / "code" / "knn"
     if not knn_root.exists():
@@ -260,7 +389,12 @@ def _load_knn_tools() -> tuple[Any, Any, Any]:
 @lru_cache(maxsize=8)
 def _load_yolo_model(model_path: str) -> Any:
     _, _, YOLO = _load_runtime_dependencies()
-    return YOLO(model_path)
+    model = YOLO(model_path)
+    try:
+        model.to(_resolve_compute_device())
+    except Exception as exc:  # pragma: no cover - environment branch
+        raise RuntimeError(f"无法将 YOLO 模型切换到推理设备：{_resolve_compute_device()}") from exc
+    return model
 
 
 @lru_cache(maxsize=1)
@@ -369,27 +503,159 @@ def _encode_preview_image(image: Any, *, max_width: int = PREVIEW_MAX_WIDTH) -> 
     return encoded.tobytes()
 
 
+def _to_preview_overlay_label(label: str) -> str:
+    normalized = _normalize_label(label)
+    mapping = {
+        "躺卧": "lying",
+        "休息": "resting",
+        "站立": "standing",
+        "行走": "walking",
+        "饮水": "drinking",
+        "采食": "feeding",
+        "牛只检测": "cow",
+        "cow detection": "cow",
+        "lying": "lying",
+        "resting": "resting",
+        "standing": "standing",
+        "walking": "walking",
+        "drinking": "drinking",
+        "feeding": "feeding",
+        "cow": "cow",
+    }
+    return mapping.get(label, mapping.get(normalized, label))
+
+
+def _draw_preview_annotation(
+    image: Any,
+    *,
+    x1: int,
+    y1: int,
+    x2: int,
+    y2: int,
+    label: str,
+    confidence: float,
+) -> None:
+    cv2, _, _ = _load_runtime_dependencies()
+    box_color = (48, 236, 252)
+    label_text = f"{_to_preview_overlay_label(label)} {round(confidence * 100)}%"
+    cv2.rectangle(image, (x1, y1), (x2, y2), box_color, 2)
+
+    label_origin_y = max(y1 - 10, 24)
+    (text_width, text_height), _ = cv2.getTextSize(
+        label_text,
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.58,
+        2,
+    )
+    cv2.rectangle(
+        image,
+        (x1, label_origin_y - text_height - 10),
+        (x1 + text_width + 10, label_origin_y),
+        box_color,
+        thickness=-1,
+    )
+    cv2.putText(
+        image,
+        label_text,
+        (x1 + 5, label_origin_y - 5),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.58,
+        (8, 18, 22),
+        2,
+        cv2.LINE_AA,
+    )
+
+
 def _annotate_preview_image(
     image: Any,
     *,
     yolo_model_key: str | None = None,
+    inference_mode: str = "yolo-only",
+    yolo_confidence: float | None = None,
+    yolo_iou: float | None = None,
+    knn_confidence_threshold: float | None = None,
 ) -> Any:
     cv2, _, _ = _load_runtime_dependencies()
     model_path = _resolve_model_path(yolo_model_key)
     model = _load_yolo_model(str(model_path))
+    classifier = None
+    extract_hog_feature = None
+    resolved_yolo_confidence = _resolve_numeric_setting(
+        yolo_confidence,
+        default_value=settings.yolo_confidence,
+    )
+    resolved_yolo_iou = _resolve_numeric_setting(
+        yolo_iou,
+        default_value=settings.yolo_iou,
+    )
+    resolved_knn_confidence_threshold = _resolve_numeric_setting(
+        knn_confidence_threshold,
+        default_value=settings.knn_confidence_threshold,
+    )
+
+    if inference_mode == "yolo-knn" and settings.knn_model_path.exists():
+        classifier = _load_knn_classifier(str(settings.knn_model_path))
+        _, extract_hog_feature, _ = _load_knn_tools()
+
     results = model.predict(
         source=image,
-        conf=settings.yolo_confidence,
-        iou=settings.yolo_iou,
+        conf=resolved_yolo_confidence,
+        iou=resolved_yolo_iou,
         verbose=False,
     )
-    annotated = results[0].plot(conf=True, labels=True, boxes=True, line_width=2)
+    result = results[0]
+    annotated = image.copy()
+    boxes = getattr(result, "boxes", None)
+    available_names = getattr(result, "names", {}) or {}
+    if boxes is not None:
+        for box in boxes:
+            class_name = _extract_class_name(result, box)
+            if not _should_use_detection_box(class_name, available_names):
+                continue
+
+            x1, y1, x2, y2 = _clamp_box(
+                *box.xyxy[0].tolist(),
+                image.shape[1],
+                image.shape[0],
+            )
+            if x2 <= x1 or y2 <= y1:
+                continue
+
+            detection_confidence = (
+                float(box.conf[0]) if getattr(box, "conf", None) is not None else 0.0
+            )
+            final_label, classifier_confidence = _resolve_box_behavior_label(
+                image=image,
+                x1=x1,
+                y1=y1,
+                x2=x2,
+                y2=y2,
+                class_name=class_name,
+                available_names=available_names,
+                classifier=classifier,
+                extract_hog_feature=extract_hog_feature,
+                knn_confidence_threshold=resolved_knn_confidence_threshold,
+            )
+
+            if not final_label:
+                continue
+
+            _draw_preview_annotation(
+                annotated,
+                x1=x1,
+                y1=y1,
+                x2=x2,
+                y2=y2,
+                label=final_label,
+                confidence=_combine_confidences(detection_confidence, classifier_confidence),
+            )
+
     cv2.putText(
         annotated,
-        f"YOLO: {model_path.stem}",
+        f"{'YOLO+KNN' if inference_mode == 'yolo-knn' else 'YOLO'} / {_resolve_compute_device()} / {model_path.stem}",
         (18, 34),
         cv2.FONT_HERSHEY_SIMPLEX,
-        0.78,
+        0.64,
         (32, 236, 252),
         2,
         cv2.LINE_AA,
@@ -417,6 +683,10 @@ def get_media_preview_bytes(
     prefer_frame: bool = True,
     annotated: bool = False,
     yolo_model_key: str | None = None,
+    inference_mode: str = "yolo-only",
+    yolo_confidence: float | None = None,
+    yolo_iou: float | None = None,
+    knn_confidence_threshold: float | None = None,
 ) -> bytes:
     preview_type, preview_uri = _resolve_preview_candidate(
         source_type=source_type,
@@ -440,6 +710,10 @@ def get_media_preview_bytes(
         image = _annotate_preview_image(
             image,
             yolo_model_key=yolo_model_key,
+            inference_mode=inference_mode,
+            yolo_confidence=yolo_confidence,
+            yolo_iou=yolo_iou,
+            knn_confidence_threshold=knn_confidence_threshold,
         )
 
     return _encode_preview_image(image)
@@ -732,21 +1006,55 @@ def _resolve_yolo_only_label(
     return None
 
 
+def _resolve_box_behavior_label(
+    *,
+    image: Any,
+    x1: int,
+    y1: int,
+    x2: int,
+    y2: int,
+    class_name: str,
+    available_names: dict[int, Any] | list[Any],
+    classifier: Any | None,
+    extract_hog_feature: Any | None,
+    knn_confidence_threshold: float,
+) -> tuple[str | None, float | None]:
+    if classifier is None or extract_hog_feature is None:
+        return _resolve_yolo_only_label(class_name, available_names), None
+
+    crop = image[y1:y2, x1:x2]
+    if crop.size == 0:
+        return None, None
+
+    feature = extract_hog_feature(crop, image_size=classifier.image_size)
+    prediction = classifier.predict(feature)
+    prediction_confidence = float(prediction.confidence)
+    if prediction_confidence < knn_confidence_threshold:
+        return _resolve_yolo_only_label(class_name, available_names), None
+
+    return (
+        _translate_behavior_label(prediction.label_name) or prediction.label_name,
+        prediction_confidence,
+    )
+
+
 def _analyze_image_source(
     payload: InferenceRequest,
     model: Any,
     classifier: Any | None,
 ) -> tuple[list[BehaviorEventCandidate], dict[str, Any]]:
     _, extract_hog_feature, _ = _load_knn_tools() if classifier is not None else (None, None, None)
-
-    image = _read_image_bytes(str(_resolve_media_source(payload)))
+    yolo_confidence = _resolve_yolo_confidence(payload)
+    yolo_iou = _resolve_yolo_iou(payload)
+    knn_confidence_threshold = _resolve_knn_confidence_threshold(payload)
     results = model.predict(
-        source=image,
-        conf=settings.yolo_confidence,
-        iou=settings.yolo_iou,
+        source=_read_image_bytes(str(_resolve_media_source(payload))),
+        conf=yolo_confidence,
+        iou=yolo_iou,
         verbose=False,
     )
     result = results[0]
+    image = result.orig_img
 
     track_observations: dict[str, TrackObservation] = {}
     boxes = getattr(result, "boxes", None)
@@ -764,21 +1072,18 @@ def _analyze_image_source(
             detection_confidence = (
                 float(box.conf[0]) if getattr(box, "conf", None) is not None else 0.0
             )
-            final_label: str | None
-            classifier_confidence: float | None = None
-
-            if classifier is not None and extract_hog_feature is not None:
-                crop = image[y1:y2, x1:x2]
-                if crop.size == 0:
-                    continue
-                feature = extract_hog_feature(crop, image_size=classifier.image_size)
-                prediction = classifier.predict(feature)
-                final_label = (
-                    _translate_behavior_label(prediction.label_name) or prediction.label_name
-                )
-                classifier_confidence = prediction.confidence
-            else:
-                final_label = _resolve_yolo_only_label(class_name, available_names)
+            final_label, classifier_confidence = _resolve_box_behavior_label(
+                image=image,
+                x1=x1,
+                y1=y1,
+                x2=x2,
+                y2=y2,
+                class_name=class_name,
+                available_names=available_names,
+                classifier=classifier,
+                extract_hog_feature=extract_hog_feature,
+                knn_confidence_threshold=knn_confidence_threshold,
+            )
 
             if not final_label:
                 continue
@@ -800,6 +1105,80 @@ def _analyze_image_source(
     }
 
 
+def _analyze_realtime_stream_source(
+    payload: InferenceRequest,
+    model: Any,
+    classifier: Any | None,
+) -> tuple[list[BehaviorEventCandidate], dict[str, Any]]:
+    _, extract_hog_feature, _ = _load_knn_tools() if classifier is not None else (None, None, None)
+    yolo_confidence = _resolve_yolo_confidence(payload)
+    yolo_iou = _resolve_yolo_iou(payload)
+    knn_confidence_threshold = _resolve_knn_confidence_threshold(payload)
+
+    image = _capture_preview_frame(_resolve_media_source(payload))
+    results = model.predict(
+        source=image,
+        conf=yolo_confidence,
+        iou=yolo_iou,
+        verbose=False,
+    )
+    result = results[0]
+
+    track_observations: dict[str, TrackObservation] = {}
+    boxes = getattr(result, "boxes", None)
+    if boxes is not None:
+        for box_index, box in enumerate(boxes, start=1):
+            class_name = _extract_class_name(result, box)
+            available_names = getattr(result, "names", {}) or {}
+            if not _should_use_detection_box(class_name, available_names):
+                continue
+
+            x1, y1, x2, y2 = _clamp_box(*box.xyxy[0].tolist(), image.shape[1], image.shape[0])
+            if x2 <= x1 or y2 <= y1:
+                continue
+
+            detection_confidence = (
+                float(box.conf[0]) if getattr(box, "conf", None) is not None else 0.0
+            )
+            final_label, classifier_confidence = _resolve_box_behavior_label(
+                image=image,
+                x1=x1,
+                y1=y1,
+                x2=x2,
+                y2=y2,
+                class_name=class_name,
+                available_names=available_names,
+                classifier=classifier,
+                extract_hog_feature=extract_hog_feature,
+                knn_confidence_threshold=knn_confidence_threshold,
+            )
+
+            if not final_label:
+                continue
+
+            _append_track_observation(
+                track_observations=track_observations,
+                track_id=f"realtime-box-{box_index}",
+                label=final_label,
+                confidence=_combine_confidences(detection_confidence, classifier_confidence),
+                offset_seconds=0.0,
+            )
+
+    notes = (
+        "实时单帧 YOLO + KNN 推理结果"
+        if classifier is not None
+        else "实时单帧 YOLO 推理结果"
+    )
+    behavior_events = _build_behavior_events(payload, track_observations, notes=notes)
+    return behavior_events, {
+        "processed_frames": 1,
+        "track_count": len(track_observations),
+        "frame_stride": 1,
+        "analysis_profile": "realtime",
+        "source_strategy": "single-frame-snapshot",
+    }
+
+
 def _analyze_video_source(
     payload: InferenceRequest,
     model: Any,
@@ -810,6 +1189,11 @@ def _analyze_video_source(
 
     source_ref = _resolve_media_source(payload)
     fps = _estimate_fps(source_ref)
+    yolo_confidence = _resolve_yolo_confidence(payload)
+    yolo_iou = _resolve_yolo_iou(payload)
+    knn_confidence_threshold = _resolve_knn_confidence_threshold(payload)
+    max_video_frames = _resolve_max_video_frames(payload)
+    frame_stride = _resolve_frame_stride(payload)
     track_states: dict[str, TrackState] = {}
     track_observations: dict[str, TrackObservation] = {}
 
@@ -817,18 +1201,18 @@ def _analyze_video_source(
     for frame_index, result in enumerate(
         model.track(
             source=str(source_ref),
-            conf=settings.yolo_confidence,
-            iou=settings.yolo_iou,
+            conf=yolo_confidence,
+            iou=yolo_iou,
             stream=True,
             persist=True,
             verbose=False,
         ),
         start=1,
     ):
-        if frame_index > settings.max_video_frames:
+        if frame_index > max_video_frames:
             break
 
-        if frame_index % max(settings.frame_stride, 1) != 0:
+        if frame_index % max(frame_stride, 1) != 0:
             continue
 
         frame_count += 1
@@ -854,7 +1238,7 @@ def _analyze_video_source(
                 float(box.conf[0]) if getattr(box, "conf", None) is not None else 0.0
             )
             final_label: str | None
-            classifier_confidence: float | None = None
+            classifier_confidence: float | None
 
             if classifier is not None and extract_hog_feature is not None:
                 crop = frame[y1:y2, x1:x2]
@@ -863,24 +1247,30 @@ def _analyze_video_source(
 
                 feature = extract_hog_feature(crop, image_size=classifier.image_size)
                 prediction = classifier.predict(feature)
-                center = _get_box_center(x1, y1, x2, y2)
-                track_state = _update_track_state(
-                    track_states,
-                    track_id,
-                    center,
-                    frame_index,
-                )
-                refined_label = _refine_behavior_label(
-                    prediction.label_name,
-                    track_state=track_state,
-                    box_width=x2 - x1,
-                    box_height=y2 - y1,
-                    np=np,
-                )
-                final_label = _translate_behavior_label(refined_label) or refined_label
-                classifier_confidence = prediction.confidence
+                prediction_confidence = float(prediction.confidence)
+                if prediction_confidence < knn_confidence_threshold:
+                    final_label = _resolve_yolo_only_label(class_name, available_names)
+                    classifier_confidence = None
+                else:
+                    center = _get_box_center(x1, y1, x2, y2)
+                    track_state = _update_track_state(
+                        track_states,
+                        track_id,
+                        center,
+                        frame_index,
+                    )
+                    refined_label = _refine_behavior_label(
+                        prediction.label_name,
+                        track_state=track_state,
+                        box_width=x2 - x1,
+                        box_height=y2 - y1,
+                        np=np,
+                    )
+                    final_label = _translate_behavior_label(refined_label) or refined_label
+                    classifier_confidence = prediction_confidence
             else:
                 final_label = _resolve_yolo_only_label(class_name, available_names)
+                classifier_confidence = None
 
             if not final_label:
                 continue
@@ -898,7 +1288,8 @@ def _analyze_video_source(
     return behavior_events, {
         "processed_frames": frame_count,
         "track_count": len(track_observations),
-        "frame_stride": settings.frame_stride,
+        "frame_stride": frame_stride,
+        "max_video_frames": max_video_frames,
         "estimated_fps": round(fps, 2),
     }
 
@@ -930,6 +1321,12 @@ def _run_real_inference(payload: InferenceRequest) -> InferenceResponse:
             model=model,
             classifier=classifier,
         )
+    elif str(payload.metadata.get("analysis_profile", "")).strip().lower() == "realtime":
+        behavior_events, runtime_metadata = _analyze_realtime_stream_source(
+            payload,
+            model=model,
+            classifier=classifier,
+        )
     else:
         behavior_events, runtime_metadata = _analyze_video_source(
             payload,
@@ -944,6 +1341,9 @@ def _run_real_inference(payload: InferenceRequest) -> InferenceResponse:
         else f"{model_path.stem}（仅 YOLO）"
     )
     model_version = _build_model_version(model_path)
+    resolved_yolo_confidence = _resolve_yolo_confidence(payload)
+    resolved_yolo_iou = _resolve_yolo_iou(payload)
+    resolved_knn_confidence_threshold = _resolve_knn_confidence_threshold(payload)
 
     return InferenceResponse(
         request_id=payload.request_id,
@@ -958,6 +1358,10 @@ def _run_real_inference(payload: InferenceRequest) -> InferenceResponse:
             "inference_mode": payload.inference_mode,
             "yolo_model_key": payload.yolo_model_key or _to_model_key(model_path),
             "yolo_model_path": str(model_path.resolve()),
+            "yolo_confidence": resolved_yolo_confidence,
+            "yolo_iou": resolved_yolo_iou,
+            "knn_confidence_threshold": resolved_knn_confidence_threshold,
+            "compute_device": _resolve_compute_device(),
             "knn_model_path": (
                 str(settings.knn_model_path.resolve()) if classifier is not None else None
             ),

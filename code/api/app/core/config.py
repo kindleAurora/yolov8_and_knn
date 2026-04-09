@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Annotated
 
 from pydantic import Field, field_validator
@@ -8,7 +9,7 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    app_name: str = Field(default="牛只智能监控平台 API", alias="APP_NAME")
+    app_name: str = Field(default="牧巡智控平台 API", alias="APP_NAME")
     app_env: str = Field(default="development", alias="APP_ENV")
     app_version: str = Field(default="0.1.0", alias="APP_VERSION")
     api_prefix: str = Field(default="/api/v1", alias="API_PREFIX")
@@ -21,6 +22,8 @@ class Settings(BaseSettings):
         default="http://localhost:8001",
         alias="INFERENCE_SERVICE_URL",
     )
+    media_stream_internal_host: str = Field(default="", alias="MEDIA_STREAM_INTERNAL_HOST")
+    generated_media_dir: Path = Field(default=Path("/app/generated-media"), alias="GENERATED_MEDIA_DIR")
     jwt_secret_key: str = Field(
         default="stage2-dev-secret-key-with-32-bytes",
         alias="JWT_SECRET_KEY",

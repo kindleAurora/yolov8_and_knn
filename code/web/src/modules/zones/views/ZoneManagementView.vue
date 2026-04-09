@@ -37,82 +37,100 @@
         </div>
 
         <div class="zone-canvas-shell">
-          <svg
-            ref="stageRef"
-            class="zone-canvas"
-            viewBox="0 0 100 56.25"
-            @pointerdown="handleCanvasPointerDown"
-          >
-            <defs>
-              <pattern id="zone-grid-major" width="12.5" height="12.5" patternUnits="userSpaceOnUse">
-                <path
-                  d="M 12.5 0 L 0 0 0 12.5"
-                  fill="none"
-                  stroke="rgba(24, 33, 41, 0.18)"
-                  stroke-width="0.28"
-                />
-              </pattern>
-              <pattern id="zone-grid-minor" width="6.25" height="6.25" patternUnits="userSpaceOnUse">
-                <path
-                  d="M 6.25 0 L 0 0 0 6.25"
-                  fill="none"
-                  stroke="rgba(24, 33, 41, 0.08)"
-                  stroke-width="0.18"
-                />
-              </pattern>
-            </defs>
-
-            <rect x="0" y="0" width="100" height="56.25" fill="rgba(255, 255, 255, 0.9)" />
-            <rect x="0" y="0" width="100" height="56.25" fill="url(#zone-grid-minor)" />
-            <rect x="0" y="0" width="100" height="56.25" fill="url(#zone-grid-major)" />
-
-            <g v-for="zone in backgroundZones" :key="zone.id" class="zone-saved-layer">
-              <polygon :points="toSvgPoints(zone.points)" class="zone-polygon zone-polygon--saved" />
-              <text
-                class="zone-label"
-                :x="getZoneLabelPosition(zone).x"
-                :y="getZoneLabelPosition(zone).y"
-              >
-                {{ zone.name }}
-              </text>
-            </g>
-
-            <g v-if="draftPoints.length > 0">
-              <polygon
-                v-if="draftPoints.length >= 3"
-                :points="toSvgPoints(draftPoints)"
-                class="zone-polygon zone-polygon--draft"
+          <div class="zone-stage">
+            <div class="zone-stage__media">
+              <img
+                v-if="stagePreviewUrl"
+                :src="stagePreviewUrl"
+                :alt="stagePreviewAlt"
+                class="zone-stage__image"
               />
-              <polyline :points="toSvgPoints(draftPoints)" class="zone-polyline zone-polyline--draft" />
+              <div v-else class="zone-stage__placeholder">
+                <strong>{{ stagePreviewTitle }}</strong>
+                <p>{{ stagePreviewMessage }}</p>
+              </div>
+            </div>
 
-              <g v-for="(point, index) in draftPoints" :key="`draft-${index}`">
-                <circle
-                  class="zone-point"
-                  :cx="toSvgX(point.x)"
-                  :cy="toSvgY(point.y)"
-                  r="1.05"
-                  @pointerdown.stop="startDraggingPoint(index, $event)"
-                />
+            <svg
+              ref="stageRef"
+              class="zone-canvas zone-canvas--overlay"
+              viewBox="0 0 100 56.25"
+              @pointerdown="handleCanvasPointerDown"
+            >
+              <defs>
+                <pattern id="zone-grid-major" width="12.5" height="12.5" patternUnits="userSpaceOnUse">
+                  <path
+                    d="M 12.5 0 L 0 0 0 12.5"
+                    fill="none"
+                    stroke="rgba(24, 33, 41, 0.2)"
+                    stroke-width="0.28"
+                  />
+                </pattern>
+                <pattern id="zone-grid-minor" width="6.25" height="6.25" patternUnits="userSpaceOnUse">
+                  <path
+                    d="M 6.25 0 L 0 0 0 6.25"
+                    fill="none"
+                    stroke="rgba(24, 33, 41, 0.1)"
+                    stroke-width="0.18"
+                  />
+                </pattern>
+              </defs>
+
+              <rect x="0" y="0" width="100" height="56.25" :fill="stageCanvasFill" />
+              <rect x="0" y="0" width="100" height="56.25" fill="url(#zone-grid-minor)" />
+              <rect x="0" y="0" width="100" height="56.25" fill="url(#zone-grid-major)" />
+
+              <g v-for="zone in backgroundZones" :key="zone.id" class="zone-saved-layer">
+                <polygon :points="toSvgPoints(zone.points)" class="zone-polygon zone-polygon--saved" />
                 <text
-                  class="zone-point-label"
-                  :x="toSvgX(point.x)"
-                  :y="toSvgY(point.y) - 1.9"
+                  class="zone-label"
+                  :x="getZoneLabelPosition(zone).x"
+                  :y="getZoneLabelPosition(zone).y"
                 >
-                  {{ index + 1 }}
+                  {{ zone.name }}
                 </text>
               </g>
-            </g>
 
-            <g v-if="!form.deviceId">
-              <text class="zone-empty-text" x="50" y="28.125">请先选择设备，再开始绘制区域</text>
-            </g>
-            <g v-else-if="draftPoints.length === 0">
-              <text class="zone-empty-text" x="50" y="28.125">点击画布即可添加第一个顶点</text>
-            </g>
-          </svg>
+              <g v-if="draftPoints.length > 0">
+                <polygon
+                  v-if="draftPoints.length >= 3"
+                  :points="toSvgPoints(draftPoints)"
+                  class="zone-polygon zone-polygon--draft"
+                />
+                <polyline :points="toSvgPoints(draftPoints)" class="zone-polyline zone-polyline--draft" />
+
+                <g v-for="(point, index) in draftPoints" :key="`draft-${index}`">
+                  <circle
+                    class="zone-point"
+                    :cx="toSvgX(point.x)"
+                    :cy="toSvgY(point.y)"
+                    r="1.05"
+                    @pointerdown.stop="startDraggingPoint(index, $event)"
+                  />
+                  <text
+                    class="zone-point-label"
+                    :x="toSvgX(point.x)"
+                    :y="toSvgY(point.y) - 1.9"
+                  >
+                    {{ index + 1 }}
+                  </text>
+                </g>
+              </g>
+
+              <g v-if="!form.deviceId">
+                <text class="zone-empty-text" x="50" y="28.125">请先选择设备，再开始绘制区域</text>
+              </g>
+              <g v-else-if="draftPoints.length === 0">
+                <text class="zone-empty-text" x="50" y="28.125">点击画布即可添加第一个顶点</text>
+              </g>
+            </svg>
+          </div>
         </div>
 
         <div class="zone-actions">
+          <button class="ghost-button" type="button" :disabled="!currentDevice" @click="loadStagePreview">
+            刷新设备画面
+          </button>
           <button class="ghost-button" type="button" :disabled="draftPoints.length === 0" @click="undoLastPoint">
             撤销最后一点
           </button>
@@ -265,9 +283,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 
 import { listDevices } from '@/api/devices';
+import { fetchDevicePreview } from '@/api/media';
 import { createZone, deleteZone, listZones, updateZone } from '@/api/zones';
 import type { DeviceSummary } from '@/types/device';
 import type { ZonePayload, ZonePoint, ZoneSummary } from '@/types/zone';
@@ -281,6 +300,7 @@ type ZoneTypeMode = 'water' | 'feeding' | 'rest' | 'custom';
 
 const STAGE_WIDTH = 100;
 const STAGE_HEIGHT = 56.25;
+const STAGE_PREVIEW_REFRESH_MS = 8000;
 
 const zoneTypeOptions: Array<{ label: string; value: ZoneTypeMode }> = [
   { label: '饮水区', value: 'water' },
@@ -302,8 +322,13 @@ const customZoneType = ref('');
 const draftPoints = ref<ZonePoint[]>([]);
 const draggingPointIndex = ref<number | null>(null);
 const stageRef = ref<SVGSVGElement | null>(null);
+const stagePreviewUrl = ref('');
+const stagePreviewLoading = ref(false);
+const stagePreviewError = ref('');
 
 const form = reactive<ZoneFormState>(createEmptyForm());
+
+let stagePreviewRefreshTimer: number | null = null;
 
 const currentDevice = computed(() =>
   devices.value.find((device) => String(device.id) === form.deviceId) ?? null,
@@ -329,6 +354,33 @@ const currentDeviceSubtitle = computed(() => {
   return currentDevice.value.install_location
     ? `安装位置：${currentDevice.value.install_location}`
     : '当前设备尚未填写安装位置。';
+});
+const stageCanvasFill = computed(() =>
+  stagePreviewUrl.value ? 'rgba(7, 17, 22, 0.16)' : 'rgba(255, 255, 255, 0.9)',
+);
+const stagePreviewAlt = computed(() =>
+  currentDevice.value ? `${currentDevice.value.name} 当前抓帧画面` : '设备抓帧画面',
+);
+const stagePreviewTitle = computed(() => {
+  if (!currentDevice.value) {
+    return '请先选择设备';
+  }
+  if (stagePreviewLoading.value) {
+    return '正在加载设备画面...';
+  }
+  return '暂无可用画面';
+});
+const stagePreviewMessage = computed(() => {
+  if (!currentDevice.value) {
+    return '选择设备后，这里会显示最新抓帧画面，便于在真实视角上绘制区域。';
+  }
+  if (!currentDevice.value.stream_url) {
+    return '当前设备还没有配置视频流地址，请先到设备管理中补充。';
+  }
+  if (stagePreviewError.value) {
+    return stagePreviewError.value;
+  }
+  return '正在等待最新画面，点击“刷新设备画面”也可以立即重新抓帧。';
 });
 
 function createEmptyForm(): ZoneFormState {
@@ -427,6 +479,7 @@ function resetForm() {
     ...createEmptyForm(),
     deviceId: currentDeviceId,
   });
+  startStagePreviewLoop();
 }
 
 function startEdit(zone: ZoneSummary) {
@@ -440,6 +493,7 @@ function startEdit(zone: ZoneSummary) {
   });
   submitError.value = '';
   submitMessage.value = '';
+  startStagePreviewLoop();
 }
 
 async function loadDevicesAndMaybeDefault() {
@@ -476,6 +530,65 @@ function getDeviceName(deviceId: number) {
 
 function formatDate(value: string) {
   return new Date(value).toLocaleString();
+}
+
+function revokeStagePreviewUrl() {
+  if (stagePreviewUrl.value) {
+    URL.revokeObjectURL(stagePreviewUrl.value);
+    stagePreviewUrl.value = '';
+  }
+}
+
+async function loadStagePreview() {
+  if (!currentDevice.value) {
+    stagePreviewLoading.value = false;
+    stagePreviewError.value = '';
+    revokeStagePreviewUrl();
+    return;
+  }
+
+  if (!currentDevice.value.stream_url) {
+    stagePreviewLoading.value = false;
+    stagePreviewError.value = '当前设备未配置视频流地址，无法抓取画面。';
+    revokeStagePreviewUrl();
+    return;
+  }
+
+  stagePreviewLoading.value = true;
+  stagePreviewError.value = '';
+
+  try {
+    const blob = await fetchDevicePreview(currentDevice.value.id);
+    const nextUrl = URL.createObjectURL(blob);
+    revokeStagePreviewUrl();
+    stagePreviewUrl.value = nextUrl;
+  } catch (error) {
+    stagePreviewError.value = error instanceof Error ? error.message : '无法获取设备最新画面。';
+    revokeStagePreviewUrl();
+  } finally {
+    stagePreviewLoading.value = false;
+  }
+}
+
+function stopStagePreviewLoop() {
+  if (stagePreviewRefreshTimer !== null) {
+    window.clearInterval(stagePreviewRefreshTimer);
+    stagePreviewRefreshTimer = null;
+  }
+}
+
+function startStagePreviewLoop() {
+  stopStagePreviewLoop();
+  if (!currentDevice.value) {
+    revokeStagePreviewUrl();
+    stagePreviewError.value = '';
+    return;
+  }
+
+  void loadStagePreview();
+  stagePreviewRefreshTimer = window.setInterval(() => {
+    void loadStagePreview();
+  }, STAGE_PREVIEW_REFRESH_MS);
 }
 
 function clientToPoint(clientX: number, clientY: number) {
@@ -639,16 +752,27 @@ async function removeZone(zoneId: number) {
   }
 }
 
+watch(
+  () => [currentDevice.value?.id, currentDevice.value?.stream_url],
+  () => {
+    startStagePreviewLoop();
+  },
+  { immediate: true },
+);
+
 onMounted(async () => {
   window.addEventListener('pointermove', handleGlobalPointerMove);
   window.addEventListener('pointerup', handleGlobalPointerUp);
 
   await refreshAll();
   resetForm();
+  startStagePreviewLoop();
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener('pointermove', handleGlobalPointerMove);
   window.removeEventListener('pointerup', handleGlobalPointerUp);
+  stopStagePreviewLoop();
+  revokeStagePreviewUrl();
 });
 </script>

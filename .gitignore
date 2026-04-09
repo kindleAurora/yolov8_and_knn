@@ -14,6 +14,7 @@ code/web/.vite/
 code/web/.npm-cache/
 code/api/.venv/
 code/api/.deps/
+code/api/generated-media/
 code/api/*.egg-info/
 code/inference-service/.venv/
 code/inference-service/.deps/

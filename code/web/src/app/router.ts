@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router';
 
 import { pinia } from '@/app/pinia';
+import { buildDocumentTitle } from '@/config/branding';
 import AppLayout from '@/layouts/AppLayout.vue';
 import LoginView from '@/modules/auth/views/LoginView.vue';
 import DashboardView from '@/modules/dashboard/views/DashboardView.vue';
@@ -19,6 +20,7 @@ export const router = createRouter({
       component: LoginView,
       meta: {
         guestOnly: true,
+        title: '登录',
       },
     },
     {
@@ -32,26 +34,41 @@ export const router = createRouter({
           path: '',
           name: 'dashboard',
           component: DashboardView,
+          meta: {
+            title: '系统总览',
+          },
         },
         {
           path: 'devices',
           name: 'devices',
           component: DeviceManagementView,
+          meta: {
+            title: '设备管理',
+          },
         },
         {
           path: 'zones',
           name: 'zones',
           component: ZoneManagementView,
+          meta: {
+            title: '区域配置',
+          },
         },
         {
           path: 'events',
           name: 'events',
           component: BehaviorEventWorkbenchView,
+          meta: {
+            title: '事件中心',
+          },
         },
         {
           path: 'monitor',
           name: 'monitor',
           component: MonitorWallView,
+          meta: {
+            title: '监控中心',
+          },
         },
       ],
     },
@@ -76,4 +93,8 @@ router.beforeEach(async (to) => {
   }
 
   return true;
+});
+
+router.afterEach((to) => {
+  document.title = buildDocumentTitle(typeof to.meta.title === 'string' ? to.meta.title : undefined);
 });

@@ -45,7 +45,11 @@ def preview_media(
     frame_uri: str | None = Query(default=None),
     prefer_frame: bool = Query(default=True),
     annotated: bool = Query(default=False),
+    inference_mode: str = Query(default="yolo-only"),
     yolo_model_key: str | None = Query(default=None),
+    yolo_confidence: float | None = Query(default=None, ge=0.0, le=1.0),
+    yolo_iou: float | None = Query(default=None, ge=0.0, le=1.0),
+    knn_confidence_threshold: float | None = Query(default=None, ge=0.0, le=1.0),
 ) -> Response:
     try:
         preview_bytes = get_media_preview_bytes(
@@ -54,7 +58,11 @@ def preview_media(
             frame_uri=frame_uri,
             prefer_frame=prefer_frame,
             annotated=annotated,
+            inference_mode=inference_mode,
             yolo_model_key=yolo_model_key,
+            yolo_confidence=yolo_confidence,
+            yolo_iou=yolo_iou,
+            knn_confidence_threshold=knn_confidence_threshold,
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

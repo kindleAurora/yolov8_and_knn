@@ -2,17 +2,17 @@
   <main class="login-page">
     <section class="login-panel">
       <div class="login-panel__hero">
-        <p class="login-panel__eyebrow">阶段 3 访问入口</p>
-        <h1>登录牛只智能监控平台</h1>
+        <p class="login-panel__eyebrow">{{ APP_ACCESS_LABEL }}</p>
+        <h1>{{ APP_NAME }}</h1>
         <p class="login-panel__text">
-          本阶段已经接入推理服务、行为事件入库和阶段化演示工作台。
+          {{ APP_SUBTITLE }}，面向智慧牧场提供设备接入、实时监控与行为事件管理能力。
         </p>
       </div>
 
       <form class="login-form" @submit.prevent="handleSubmit">
         <label class="field">
           <span>用户名</span>
-          <input v-model.trim="username" type="text" autocomplete="username" placeholder="请输入用户名" />
+          <input v-model.trim="username" type="text" autocomplete="username" placeholder="请输入账号名称" />
         </label>
 
         <label class="field">
@@ -21,7 +21,7 @@
         </label>
 
         <button class="primary-button" type="submit" :disabled="submitting">
-          {{ submitting ? '登录中...' : '登录' }}
+          {{ submitting ? '登录中...' : '进入系统' }}
         </button>
 
         <p v-if="errorMessage" class="error-text">{{ errorMessage }}</p>
@@ -29,14 +29,14 @@
 
       <div class="credential-cards">
         <article class="credential-card">
-          <h2>管理员账号</h2>
+          <h2>系统管理员</h2>
           <p>`admin` / `admin123`</p>
-          <span>可新增、编辑、停用和删除设备。</span>
+          <span>具备设备、区域和行为事件的完整管理权限。</span>
         </article>
         <article class="credential-card">
-          <h2>普通账号</h2>
+          <h2>观察账号</h2>
           <p>`viewer` / `viewer123`</p>
-          <span>可查看设备，并在同一农场范围内管理区域。</span>
+          <span>可查看设备运行状态，并维护所属农场的区域配置。</span>
         </article>
       </div>
     </section>
@@ -47,14 +47,15 @@
 import { ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
+import { APP_ACCESS_LABEL, APP_NAME, APP_SUBTITLE } from '@/config/branding';
 import { useAuthStore } from '@/stores/auth';
 
 const authStore = useAuthStore();
 const route = useRoute();
 const router = useRouter();
 
-const username = ref('admin');
-const password = ref('admin123');
+const username = ref('');
+const password = ref('');
 const submitting = ref(false);
 const errorMessage = ref('');
 

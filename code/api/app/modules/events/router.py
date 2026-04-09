@@ -5,7 +5,7 @@ from typing import Any, Literal
 from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
@@ -14,7 +14,13 @@ from app.common.responses import success_response
 from app.core.audit import record_audit_log
 from app.core.database import get_db
 from app.core.deps import get_current_user
-from app.core.inference_client import fetch_inference_service_meta, invoke_inference_service
+from app.core.event_preview_cache import PREVIEW_CACHE_KEY, write_event_preview_cache
+from app.core.inference_client import (
+    fetch_inference_preview,
+    fetch_inference_service_meta,
+    invoke_inference_service,
+)
+from app.core.media_sources import resolve_inference_media_uri
 from app.core.models import BehaviorEvent, Device, MediaAsset, User, Zone
 
 router = APIRouter(prefix="/events", tags=["行为事件"])
@@ -67,6 +73,9 @@ class InferenceServiceMeta(BaseModel):
     available_inference_modes: list[str]
     default_inference_mode: str
     default_yolo_model_key: str | None = None
+    default_yolo_confidence: float
+    default_yolo_iou: float
+    default_knn_confidence_threshold: float
     available_yolo_models: list[InferenceModelOption]
     knn_model_loaded: bool
 
@@ -248,6 +257,58 @@ def _resolve_inference_timeout(source_type: str) -> int:
     return 30
 
 
+def _build_preview_query(
+    *,
+    source_type: str,
+    source_uri: str,
+    frame_uri: str | None,
+    inference_mode: str,
+    yolo_model_key: str | None,
+    yolo_confidence: float | None = None,
+    yolo_iou: float | None = None,
+    knn_confidence_threshold: float | None = None,
+) -> dict[str, object]:
+    return {
+        "source_type": source_type,
+        "source_uri": source_uri,
+        "frame_uri": frame_uri,
+        "prefer_frame": True,
+        "annotated": True,
+        "inference_mode": inference_mode,
+        "yolo_model_key": yolo_model_key,
+        "yolo_confidence": yolo_confidence,
+        "yolo_iou": yolo_iou,
+        "knn_confidence_threshold": knn_confidence_threshold,
+    }
+
+
+def _generate_preview_cache(
+    *,
+    request_id: str,
+    preview_query: dict[str, object],
+) -> str | None:
+    try:
+        payload, _media_type, _content_disposition = fetch_inference_preview(preview_query)
+    except RuntimeError:
+        return None
+    except OSError:
+        return None
+
+
+def _read_numeric_metadata(metadata: dict[str, Any], key: str) -> float | None:
+    raw_value = metadata.get(key)
+    if isinstance(raw_value, bool):
+        return None
+    if isinstance(raw_value, (int, float)):
+        return float(raw_value)
+    return None
+
+    try:
+        return write_event_preview_cache(request_id, payload)
+    except OSError:
+        return None
+
+
 @router.get("")
 def list_behavior_events(
     device_id: int | None = Query(default=None),
@@ -318,20 +379,23 @@ def get_inference_meta(
 def import_behavior_events(
     payload: InferenceImportRequest,
     request: Request,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
     device = _get_device_or_404(db, device_code=payload.device_code, farm_id=current_user.farm_id)
     zone_map = _resolve_zone_map(db, farm_id=current_user.farm_id, device_id=device.id)
     request_id = payload.request_id or f"req-{uuid4().hex[:12]}"
+    resolved_source_uri = resolve_inference_media_uri(payload.source_uri)
+    resolved_frame_uri = resolve_inference_media_uri(payload.frame_uri)
 
     inference_payload = {
         "request_id": request_id,
         "source_type": payload.source_type,
-        "source_uri": payload.source_uri,
+        "source_uri": resolved_source_uri,
         "occurred_at": payload.occurred_at.isoformat(),
         "device_code": device.code,
-        "frame_uri": payload.frame_uri,
+        "frame_uri": resolved_frame_uri,
         "inference_mode": payload.inference_mode,
         "yolo_model_key": payload.yolo_model_key,
         "metadata": _build_import_metadata(payload, device, zone_map),
@@ -350,11 +414,41 @@ def import_behavior_events(
             detail=str(exc),
         ) from exc
 
+    event_raw_metadata = dict(inference_result.raw_metadata)
+    preview_cache_path = None
+    preview_query = _build_preview_query(
+        source_type=payload.source_type,
+        source_uri=resolved_source_uri,
+        frame_uri=resolved_frame_uri,
+        inference_mode=payload.inference_mode,
+        yolo_model_key=(
+            event_raw_metadata.get("yolo_model_key")
+            if isinstance(event_raw_metadata.get("yolo_model_key"), str)
+            else payload.yolo_model_key
+        ),
+        yolo_confidence=_read_numeric_metadata(event_raw_metadata, "yolo_confidence"),
+        yolo_iou=_read_numeric_metadata(event_raw_metadata, "yolo_iou"),
+        knn_confidence_threshold=_read_numeric_metadata(event_raw_metadata, "knn_confidence_threshold"),
+    )
+    if str(payload.metadata.get("analysis_profile", "")).strip().lower() != "realtime":
+        preview_cache_path = _generate_preview_cache(
+            request_id=request_id,
+            preview_query=preview_query,
+        )
+    else:
+        background_tasks.add_task(
+            _generate_preview_cache,
+            request_id=request_id,
+            preview_query=preview_query,
+        )
+    if preview_cache_path:
+        event_raw_metadata[PREVIEW_CACHE_KEY] = preview_cache_path
+
     media_asset = _create_media_asset(
         db,
         payload=payload,
         device=device,
-        raw_metadata=inference_result.raw_metadata,
+        raw_metadata=event_raw_metadata,
     )
 
     created_event_ids: list[int] = []
@@ -379,7 +473,7 @@ def import_behavior_events(
             source_uri=payload.source_uri,
             frame_uri=payload.frame_uri,
             notes=event_candidate.notes,
-            raw_metadata=inference_result.raw_metadata,
+            raw_metadata=event_raw_metadata,
         )
         db.add(behavior_event)
         db.flush()

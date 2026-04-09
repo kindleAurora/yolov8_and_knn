@@ -1,4 +1,29 @@
 services:
+  mediamtx:
+    image: bluenviron/mediamtx:1.17.1
+    restart: unless-stopped
+    volumes:
+      - ../streaming/mediamtx.yml:/mediamtx.yml:ro
+    ports:
+      - "${MEDIA_RTSP_PORT:-8554}:8554"
+      - "${MEDIA_HLS_PORT:-8888}:8888"
+    command: ["/mediamtx.yml"]
+
+  video-loop-publisher:
+    image: jrottenberg/ffmpeg:7.1-ubuntu2404
+    restart: unless-stopped
+    entrypoint: ["bash", "/scripts/publish-loop.sh"]
+    depends_on:
+      mediamtx:
+        condition: service_started
+    environment:
+      VIDEO_DIR: /videos
+      RTSP_OUTPUT_URL: rtsp://mediamtx:8554/${MEDIA_STREAM_PATH:-cow-monitor/demo}
+      VIDEO_GLOB: ${VIDEO_GLOB:-*.mp4}
+    volumes:
+      - ../../../all_datasets/videos:/videos:ro
+      - ../streaming/publish-loop.sh:/scripts/publish-loop.sh:ro
+
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -58,12 +83,13 @@ services:
     restart: unless-stopped
     environment:
       APP_ENV: ${APP_ENV:-development}
-      APP_NAME: ${APP_NAME:-牛只智能监控平台 API}
+      APP_NAME: ${APP_NAME:-牧巡智控平台 API}
       APP_VERSION: "0.1.0"
       API_PREFIX: /api/v1
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-cow}:${POSTGRES_PASSWORD:-cow}@postgres:5432/${POSTGRES_DB:-cow_monitor}
       REDIS_URL: redis://redis:6379/0
       INFERENCE_SERVICE_URL: http://inference-service:8001
+      MEDIA_STREAM_INTERNAL_HOST: ${MEDIA_STREAM_INTERNAL_HOST:-mediamtx}
       CORS_ORIGINS: ${API_CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
       JWT_SECRET_KEY: ${API_JWT_SECRET_KEY:-stage2-dev-secret-key-with-32-bytes}
       JWT_ALGORITHM: ${API_JWT_ALGORITHM:-HS256}
@@ -90,8 +116,9 @@ services:
         NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
     restart: unless-stopped
     environment:
-      VITE_APP_TITLE: ${VITE_APP_TITLE:-牛只智能监控平台}
+      VITE_APP_TITLE: ${VITE_APP_TITLE:-牧巡智控平台}
       VITE_API_BASE_URL: http://localhost:${API_PORT:-8000}
+      VITE_MEDIA_MTX_HLS_BASE_URL: "${VITE_MEDIA_MTX_HLS_BASE_URL:-http://localhost:${MEDIA_HLS_PORT:-8888}}"
     volumes:
       - ../../../code/web:/app
       - web_node_modules:/app/node_modules
