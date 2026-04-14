@@ -7,6 +7,7 @@
 - 阶段 1：工程骨架、Docker 开发环境、前后端基础服务、推理服务占位
 - 阶段 2：登录鉴权、JWT 会话保持、角色权限、设备管理、区域管理、审计日志
 - 阶段 3：推理服务统一契约、行为事件写库、事件工作台与最近事件展示
+- 阶段 4：告警规则、告警中心、历史查询与基础可视化分析
 
 ## 语言规范
 
@@ -107,6 +108,14 @@ npm run dev -- --host 0.0.0.0 --port 5173
 - 平台可在“行为事件”页面手动导入推理结果并查看最新事件
 - 首页可展示今日行为事件数与最近行为事件摘要
 
+## 阶段 4 验收点
+
+- 平台支持预设规则与最小自定义规则配置
+- 行为事件导入后可自动执行规则判断并生成告警
+- 可查看告警列表、告警详情并更新处理状态
+- 历史行为与历史告警支持按条件分页查询
+- 历史分析页可展示趋势图与占比图
+
 ## 常用命令
 
 ```powershell
@@ -128,6 +137,26 @@ docker compose -f code/infra/docker/docker-compose.yml down
 
 - `python -m pytest`
 - `python -m ruff check .`
+
+## Zone-Assisted Behavior Logic
+
+The inference service now uses manually drawn zones as a second-stage behavior refiner.
+
+- Anchor point: each cow uses the bottom-center of its detection box as the location anchor.
+- Zone match order:
+  1. The anchor is inside the polygon.
+  2. If not inside, it is still treated as matched when the distance to the polygon edge is within `ZONE_PROXIMITY_THRESHOLD` (default `0.04`, which is about 4% of the frame size).
+- Time accumulation:
+  - For videos, the service accumulates dwell time per tracked cow in each zone.
+  - For images and realtime snapshots, the service only records the matched zone and does not force a time-based override.
+- Refinement rules:
+  - Feeding: if a cow stays in a `feeding` zone for at least `8s` and that zone accounts for at least `60%` of the observed track duration, the final behavior becomes `feeding`.
+  - Drinking: if a cow stays in a `water` zone for at least `6s` and that zone accounts for at least `60%` of the observed track duration, the final behavior becomes `drinking`.
+  - Resting: if a cow stays in a `rest` zone for at least `12s` and that zone accounts for at least `60%` of the observed track duration, the final behavior becomes `resting`.
+  - Lying priority: if the model already decides the cow is lying, the result keeps `lying` even when the cow is in the rest zone.
+- Output behavior:
+  - Events now keep the matched `zone_name`.
+  - When a zone rule changes the final behavior, the event notes include a `zone-rule:...` explanation with base behavior, zone, dwell time, and share.
 
 推理服务：
 

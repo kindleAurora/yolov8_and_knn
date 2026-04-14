@@ -13,6 +13,9 @@
         <RouterLink to="/devices" class="nav-link">设备资产</RouterLink>
         <RouterLink to="/zones" class="nav-link">区域配置</RouterLink>
         <RouterLink to="/events" class="nav-link">事件中心</RouterLink>
+        <RouterLink to="/alerts" class="nav-link">告警中心</RouterLink>
+        <RouterLink to="/rules" class="nav-link">规则配置</RouterLink>
+        <RouterLink to="/history" class="nav-link">历史分析</RouterLink>
       </nav>
 
       <a class="docs-link" :href="docsUrl" target="_blank" rel="noreferrer">查看 API 文档</a>

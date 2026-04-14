@@ -6,6 +6,10 @@ export function listDevices(includeDisabled = true): Promise<DeviceSummary[]> {
   return apiRequest<DeviceSummary[]>(`/api/v1/devices${query}`);
 }
 
+export function getDevice(deviceId: number): Promise<DeviceSummary> {
+  return apiRequest<DeviceSummary>(`/api/v1/devices/${deviceId}`);
+}
+
 export function createDevice(payload: DevicePayload): Promise<DeviceSummary> {
   return apiRequest<DeviceSummary>('/api/v1/devices', {
     method: 'POST',

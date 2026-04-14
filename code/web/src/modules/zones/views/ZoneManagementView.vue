@@ -39,13 +39,27 @@
         <div class="zone-canvas-shell">
           <div class="zone-stage">
             <div class="zone-stage__media">
-              <img
-                v-if="stagePreviewUrl"
-                :src="stagePreviewUrl"
-                :alt="stagePreviewAlt"
-                class="zone-stage__image"
+              <video
+                v-if="stageLiveStreamUrl"
+                ref="stageVideoRef"
+                :aria-label="stagePreviewAlt"
+                class="zone-stage__video"
+                autoplay
+                muted
+                playsinline
+                @playing="handleStagePlaying"
+                @waiting="handleStageWaiting"
+                @stalled="handleStageWaiting"
+                @error="handleStageVideoError"
               />
               <div v-else class="zone-stage__placeholder">
+                <strong>{{ stagePreviewTitle }}</strong>
+                <p>{{ stagePreviewMessage }}</p>
+              </div>
+              <div
+                v-if="stageLiveStreamUrl && (stagePreviewLoading || stagePreviewError)"
+                class="zone-stage__overlay"
+              >
                 <strong>{{ stagePreviewTitle }}</strong>
                 <p>{{ stagePreviewMessage }}</p>
               </div>
@@ -128,8 +142,8 @@
         </div>
 
         <div class="zone-actions">
-          <button class="ghost-button" type="button" :disabled="!currentDevice" @click="loadStagePreview">
-            刷新设备画面
+          <button class="ghost-button" type="button" :disabled="!currentDevice" @click="reloadStageStream">
+            重连实时画面
           </button>
           <button class="ghost-button" type="button" :disabled="draftPoints.length === 0" @click="undoLastPoint">
             撤销最后一点
@@ -283,13 +297,14 @@
 </template>
 
 <script setup lang="ts">
+import type Hls from 'hls.js';
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 
 import { listDevices } from '@/api/devices';
-import { fetchDevicePreview } from '@/api/media';
 import { createZone, deleteZone, listZones, updateZone } from '@/api/zones';
 import type { DeviceSummary } from '@/types/device';
 import type { ZonePayload, ZonePoint, ZoneSummary } from '@/types/zone';
+import { resolveDeviceBrowserStreamUrl } from '@/utils/liveStream';
 
 interface ZoneFormState {
   deviceId: string;
@@ -300,7 +315,6 @@ type ZoneTypeMode = 'water' | 'feeding' | 'rest' | 'custom';
 
 const STAGE_WIDTH = 100;
 const STAGE_HEIGHT = 56.25;
-const STAGE_PREVIEW_REFRESH_MS = 8000;
 
 const zoneTypeOptions: Array<{ label: string; value: ZoneTypeMode }> = [
   { label: '饮水区', value: 'water' },
@@ -322,13 +336,12 @@ const customZoneType = ref('');
 const draftPoints = ref<ZonePoint[]>([]);
 const draggingPointIndex = ref<number | null>(null);
 const stageRef = ref<SVGSVGElement | null>(null);
-const stagePreviewUrl = ref('');
+const stageVideoRef = ref<HTMLVideoElement | null>(null);
 const stagePreviewLoading = ref(false);
 const stagePreviewError = ref('');
 
 const form = reactive<ZoneFormState>(createEmptyForm());
-
-let stagePreviewRefreshTimer: number | null = null;
+let stageHls: Hls | null = null;
 
 const currentDevice = computed(() =>
   devices.value.find((device) => String(device.id) === form.deviceId) ?? null,
@@ -343,6 +356,9 @@ const displayedZones = computed(() => {
 const backgroundZones = computed(() =>
   displayedZones.value.filter((zone) => zone.id !== editingId.value),
 );
+const stageLiveStreamUrl = computed(() =>
+  currentDevice.value ? resolveDeviceBrowserStreamUrl(currentDevice.value) : null,
+);
 const currentDeviceTitle = computed(() =>
   currentDevice.value ? `${currentDevice.value.name}（${currentDevice.value.code}）` : '尚未选择设备',
 );
@@ -356,31 +372,34 @@ const currentDeviceSubtitle = computed(() => {
     : '当前设备尚未填写安装位置。';
 });
 const stageCanvasFill = computed(() =>
-  stagePreviewUrl.value ? 'rgba(7, 17, 22, 0.16)' : 'rgba(255, 255, 255, 0.9)',
+  stageLiveStreamUrl.value ? 'rgba(7, 17, 22, 0.16)' : 'rgba(255, 255, 255, 0.9)',
 );
 const stagePreviewAlt = computed(() =>
-  currentDevice.value ? `${currentDevice.value.name} 当前抓帧画面` : '设备抓帧画面',
+  currentDevice.value ? `${currentDevice.value.name} 实时监控画面` : '设备实时监控画面',
 );
 const stagePreviewTitle = computed(() => {
   if (!currentDevice.value) {
     return '请先选择设备';
   }
   if (stagePreviewLoading.value) {
-    return '正在加载设备画面...';
+    return '正在连接实时画面...';
+  }
+  if (stagePreviewError.value) {
+    return '实时画面暂时不可用';
   }
   return '暂无可用画面';
 });
 const stagePreviewMessage = computed(() => {
   if (!currentDevice.value) {
-    return '选择设备后，这里会显示最新抓帧画面，便于在真实视角上绘制区域。';
+    return '选择设备后，这里会显示实时监控画面，便于在真实视角上绘制区域。';
   }
-  if (!currentDevice.value.stream_url) {
-    return '当前设备还没有配置视频流地址，请先到设备管理中补充。';
+  if (!stageLiveStreamUrl.value) {
+    return '当前设备还没有可供浏览器播放的直播地址，请先检查 stream_url 或补充 hls_url。';
   }
   if (stagePreviewError.value) {
     return stagePreviewError.value;
   }
-  return '正在等待最新画面，点击“刷新设备画面”也可以立即重新抓帧。';
+  return '实时画面已接入，绘制区域时会持续跟随视频流更新。';
 });
 
 function createEmptyForm(): ZoneFormState {
@@ -479,7 +498,7 @@ function resetForm() {
     ...createEmptyForm(),
     deviceId: currentDeviceId,
   });
-  startStagePreviewLoop();
+  void initializeStagePlayer();
 }
 
 function startEdit(zone: ZoneSummary) {
@@ -493,7 +512,7 @@ function startEdit(zone: ZoneSummary) {
   });
   submitError.value = '';
   submitMessage.value = '';
-  startStagePreviewLoop();
+  void initializeStagePlayer();
 }
 
 async function loadDevicesAndMaybeDefault() {
@@ -532,63 +551,137 @@ function formatDate(value: string) {
   return new Date(value).toLocaleString();
 }
 
-function revokeStagePreviewUrl() {
-  if (stagePreviewUrl.value) {
-    URL.revokeObjectURL(stagePreviewUrl.value);
-    stagePreviewUrl.value = '';
+function destroyStagePlayer() {
+  if (stageHls) {
+    stageHls.destroy();
+    stageHls = null;
   }
-}
 
-async function loadStagePreview() {
-  if (!currentDevice.value) {
-    stagePreviewLoading.value = false;
-    stagePreviewError.value = '';
-    revokeStagePreviewUrl();
+  const video = stageVideoRef.value;
+  if (!video) {
     return;
   }
 
-  if (!currentDevice.value.stream_url) {
+  video.pause();
+  video.removeAttribute('src');
+  video.load();
+}
+
+async function playStageVideo(video: HTMLVideoElement) {
+  try {
+    await video.play();
+  } catch {
+    // Wait until the browser buffers enough data for autoplay.
+  }
+}
+
+function handleStagePlaying() {
+  stagePreviewLoading.value = false;
+  stagePreviewError.value = '';
+}
+
+function handleStageWaiting() {
+  if (!stagePreviewError.value) {
+    stagePreviewLoading.value = true;
+  }
+}
+
+function handleStageVideoError() {
+  stagePreviewLoading.value = false;
+  if (!stagePreviewError.value) {
+    stagePreviewError.value = '浏览器无法播放当前视频流，请检查 HLS 输出是否可用。';
+  }
+}
+
+function attachNativeStageSource(video: HTMLVideoElement, streamUrl: string) {
+  video.src = streamUrl;
+  void playStageVideo(video);
+}
+
+async function attachHlsStageSource(video: HTMLVideoElement, streamUrl: string) {
+  const HlsModule = (await import('hls.js/dist/hls.mjs')).default;
+
+  stageHls = new HlsModule({
+    lowLatencyMode: true,
+    backBufferLength: 90,
+  });
+
+  stageHls.on(HlsModule.Events.MEDIA_ATTACHED, () => {
+    stageHls?.loadSource(streamUrl);
+  });
+
+  stageHls.on(HlsModule.Events.MANIFEST_PARSED, () => {
     stagePreviewLoading.value = false;
-    stagePreviewError.value = '当前设备未配置视频流地址，无法抓取画面。';
-    revokeStagePreviewUrl();
+    stagePreviewError.value = '';
+    void playStageVideo(video);
+  });
+
+  stageHls.on(HlsModule.Events.ERROR, (_event, data) => {
+    if (!data.fatal) {
+      return;
+    }
+
+    if (data.type === HlsModule.ErrorTypes.NETWORK_ERROR) {
+      stagePreviewLoading.value = true;
+      stageHls?.startLoad();
+      return;
+    }
+
+    if (data.type === HlsModule.ErrorTypes.MEDIA_ERROR) {
+      stageHls?.recoverMediaError();
+      return;
+    }
+
+    stagePreviewLoading.value = false;
+    stagePreviewError.value = 'HLS 播放器无法恢复，请检查 MediaMTX 是否正在输出该路直播流。';
+  });
+
+  stageHls.attachMedia(video);
+}
+
+async function initializeStagePlayer() {
+  destroyStagePlayer();
+
+  const video = stageVideoRef.value;
+  const streamUrl = stageLiveStreamUrl.value;
+
+  if (!currentDevice.value) {
+    stagePreviewLoading.value = false;
+    stagePreviewError.value = '';
+    return;
+  }
+
+  if (!video || !streamUrl) {
+    stagePreviewLoading.value = false;
+    stagePreviewError.value = currentDevice.value.stream_url
+      ? '当前设备没有可供浏览器播放的直播地址，请在设备配置中补充 hls_url 或 browser_stream_url。'
+      : '当前设备未配置视频流地址，无法播放实时画面。';
     return;
   }
 
   stagePreviewLoading.value = true;
   stagePreviewError.value = '';
+  video.muted = true;
+  video.autoplay = true;
+  video.playsInline = true;
 
-  try {
-    const blob = await fetchDevicePreview(currentDevice.value.id);
-    const nextUrl = URL.createObjectURL(blob);
-    revokeStagePreviewUrl();
-    stagePreviewUrl.value = nextUrl;
-  } catch (error) {
-    stagePreviewError.value = error instanceof Error ? error.message : '无法获取设备最新画面。';
-    revokeStagePreviewUrl();
-  } finally {
-    stagePreviewLoading.value = false;
-  }
-}
-
-function stopStagePreviewLoop() {
-  if (stagePreviewRefreshTimer !== null) {
-    window.clearInterval(stagePreviewRefreshTimer);
-    stagePreviewRefreshTimer = null;
-  }
-}
-
-function startStagePreviewLoop() {
-  stopStagePreviewLoop();
-  if (!currentDevice.value) {
-    revokeStagePreviewUrl();
-    stagePreviewError.value = '';
+  if (video.canPlayType('application/vnd.apple.mpegurl')) {
+    attachNativeStageSource(video, streamUrl);
     return;
   }
 
-  void loadStagePreview();
-  stagePreviewRefreshTimer = window.setInterval(() => {
-    void loadStagePreview();
-  }, STAGE_PREVIEW_REFRESH_MS);
+  const HlsModule = (await import('hls.js/dist/hls.mjs')).default;
+  if (HlsModule.isSupported()) {
+    await attachHlsStageSource(video, streamUrl);
+    return;
+  }
+
+  stagePreviewLoading.value = false;
+  stagePreviewError.value = '当前浏览器不支持 HLS 播放，请使用最新版 Chrome 或 Edge。';
+}
+
+function reloadStageStream() {
+  void initializeStagePlayer();
 }
 
 function clientToPoint(clientX: number, clientY: number) {
@@ -753,9 +846,9 @@ async function removeZone(zoneId: number) {
 }
 
 watch(
-  () => [currentDevice.value?.id, currentDevice.value?.stream_url],
+  () => [currentDevice.value?.id, currentDevice.value?.stream_url, currentDevice.value?.updated_at],
   () => {
-    startStagePreviewLoop();
+    void initializeStagePlayer();
   },
   { immediate: true },
 );
@@ -766,13 +859,12 @@ onMounted(async () => {
 
   await refreshAll();
   resetForm();
-  startStagePreviewLoop();
+  void initializeStagePlayer();
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener('pointermove', handleGlobalPointerMove);
   window.removeEventListener('pointerup', handleGlobalPointerUp);
-  stopStagePreviewLoop();
-  revokeStagePreviewUrl();
+  destroyStagePlayer();
 });
 </script>

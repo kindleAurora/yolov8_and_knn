@@ -48,6 +48,8 @@ class Farm(TimestampMixin, Base):
     zones: Mapped[list[Zone]] = relationship(back_populates="farm")
     media_assets: Mapped[list[MediaAsset]] = relationship(back_populates="farm")
     behavior_events: Mapped[list[BehaviorEvent]] = relationship(back_populates="farm")
+    alert_rules: Mapped[list[AlertRule]] = relationship(back_populates="farm")
+    alerts: Mapped[list[Alert]] = relationship(back_populates="farm")
     audit_logs: Mapped[list[AuditLog]] = relationship(back_populates="farm")
 
 
@@ -85,6 +87,7 @@ class User(TimestampMixin, Base):
         cascade="all, delete-orphan",
     )
     audit_logs: Mapped[list[AuditLog]] = relationship(back_populates="user")
+    handled_alerts: Mapped[list[Alert]] = relationship(back_populates="handled_by_user")
 
     @property
     def roles(self) -> list[Role]:
@@ -134,6 +137,8 @@ class Device(TimestampMixin, Base):
     zones: Mapped[list[Zone]] = relationship(back_populates="device", cascade="all, delete-orphan")
     media_assets: Mapped[list[MediaAsset]] = relationship(back_populates="device")
     behavior_events: Mapped[list[BehaviorEvent]] = relationship(back_populates="device")
+    alert_rules: Mapped[list[AlertRule]] = relationship(back_populates="device")
+    alerts: Mapped[list[Alert]] = relationship(back_populates="device")
 
 
 class Zone(TimestampMixin, Base):
@@ -232,6 +237,85 @@ class BehaviorEvent(TimestampMixin, Base):
     device: Mapped[Device | None] = relationship(back_populates="behavior_events")
     zone: Mapped[Zone | None] = relationship(back_populates="behavior_events")
     media_asset: Mapped[MediaAsset | None] = relationship(back_populates="behavior_events")
+    alerts: Mapped[list[Alert]] = relationship(back_populates="behavior_event")
+
+
+class AlertRule(TimestampMixin, Base):
+    __tablename__ = "alert_rules"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    farm_id: Mapped[int] = mapped_column(
+        ForeignKey("farms.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    device_id: Mapped[int | None] = mapped_column(
+        ForeignKey("devices.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    rule_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    severity: Mapped[str] = mapped_column(String(32), nullable=False, default="medium", index=True)
+    source: Mapped[str] = mapped_column(String(32), nullable=False, default="preset", index=True)
+    is_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
+    threshold_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
+    zone_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    behavior_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    config: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+
+    farm: Mapped[Farm] = relationship(back_populates="alert_rules")
+    device: Mapped[Device | None] = relationship(back_populates="alert_rules")
+    alerts: Mapped[list[Alert]] = relationship(back_populates="rule")
+
+
+class Alert(TimestampMixin, Base):
+    __tablename__ = "alerts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    farm_id: Mapped[int] = mapped_column(
+        ForeignKey("farms.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    rule_id: Mapped[int | None] = mapped_column(
+        ForeignKey("alert_rules.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    behavior_event_id: Mapped[int | None] = mapped_column(
+        ForeignKey("behavior_events.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    device_id: Mapped[int | None] = mapped_column(
+        ForeignKey("devices.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    handled_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    device_code: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    severity: Mapped[str] = mapped_column(String(32), nullable=False, default="medium", index=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="open", index=True)
+    rule_source: Mapped[str] = mapped_column(String(32), nullable=False, default="preset", index=True)
+    triggered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    handling_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+
+    farm: Mapped[Farm] = relationship(back_populates="alerts")
+    rule: Mapped[AlertRule | None] = relationship(back_populates="alerts")
+    behavior_event: Mapped[BehaviorEvent | None] = relationship(back_populates="alerts")
+    device: Mapped[Device | None] = relationship(back_populates="alerts")
+    handled_by_user: Mapped[User | None] = relationship(back_populates="handled_alerts")
 
 
 class AuditLog(Base):

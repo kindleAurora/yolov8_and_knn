@@ -69,8 +69,40 @@ export interface BehaviorEventImportResult {
   behavior_events: BehaviorEventSummary[];
 }
 
+export interface BehaviorBreakdownItem {
+  behavior_key: string;
+  behavior_type: string;
+  event_count: number;
+  cow_count_total: number;
+  duration_seconds: number;
+  event_share: number;
+  duration_share: number;
+}
+
+export interface BehaviorTimelineSegment {
+  behavior_key: string;
+  behavior_type: string;
+  started_at: string;
+  ended_at: string;
+  duration_seconds: number;
+}
+
+export interface DailyBehaviorOverview {
+  date: string;
+  window_started_at: string;
+  window_ended_at: string;
+  total_events: number;
+  tracked_duration_seconds: number;
+  lying_event_count: number;
+  standing_duration_seconds: number;
+  dominant_behavior: string | null;
+  breakdown: BehaviorBreakdownItem[];
+  timeline: BehaviorTimelineSegment[];
+}
+
 export interface BehaviorEventStats {
   total_count: number;
   today_count: number;
   recent_events: BehaviorEventSummary[];
+  today_behavior_overview: DailyBehaviorOverview;
 }

@@ -3,7 +3,15 @@ from datetime import UTC, datetime
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.pipelines.runtime import (
+    _append_track_observation,
+    _build_behavior_events,
+    _canonical_behavior_key,
+    _extract_zone_candidates,
+    _match_detection_zone,
+)
 from app.schemas.inference import BehaviorEventCandidate, InferenceResponse
+from app.schemas.inference import InferenceRequest
 
 client = TestClient(app)
 
@@ -140,3 +148,90 @@ def test_raw_media_endpoint(monkeypatch) -> None:
     assert response.headers["content-type"].startswith("video/mp4")
     assert "sample.mp4" in response.headers["content-disposition"]
     assert response.content == b"video-bytes"
+
+
+def test_zone_matching_supports_near_hits() -> None:
+    payload = InferenceRequest(
+        request_id="req-zone-near",
+        source_type="video",
+        source_uri="demo.mp4",
+        occurred_at=datetime.now(UTC),
+        metadata={
+            "zone_candidates": [
+                {
+                    "name": "Feed Zone",
+                    "zone_type": "feeding",
+                    "shape_type": "polygon",
+                    "points": [
+                        {"x": 0.4, "y": 0.6},
+                        {"x": 0.7, "y": 0.6},
+                        {"x": 0.7, "y": 0.9},
+                        {"x": 0.4, "y": 0.9},
+                    ],
+                }
+            ]
+        },
+    )
+
+    zone_candidates = _extract_zone_candidates(payload)
+    zone_match = _match_detection_zone(
+        zone_candidates,
+        x1=40,
+        y1=20,
+        x2=60,
+        y2=58,
+        frame_width=100,
+        frame_height=100,
+    )
+
+    assert zone_match is not None
+    assert zone_match.name == "Feed Zone"
+    assert zone_match.zone_type == "feeding"
+    assert zone_match.relation == "near"
+
+
+def test_zone_dwell_refines_behavior_events() -> None:
+    payload = InferenceRequest(
+        request_id="req-zone-rule",
+        source_type="video",
+        source_uri="demo.mp4",
+        occurred_at=datetime.now(UTC),
+        device_code="cam-001",
+        metadata={
+            "zone_candidates": [
+                {
+                    "name": "Feed Zone",
+                    "zone_type": "feeding",
+                    "shape_type": "polygon",
+                    "points": [
+                        {"x": 0.35, "y": 0.55},
+                        {"x": 0.75, "y": 0.55},
+                        {"x": 0.75, "y": 0.95},
+                        {"x": 0.35, "y": 0.95},
+                    ],
+                }
+            ]
+        },
+    )
+    track_observations = {}
+
+    for index in range(4):
+        _append_track_observation(
+            track_observations,
+            track_id="track-1",
+            label="standing",
+            confidence=0.92,
+            offset_seconds=float(index * 3),
+            zone_name="Feed Zone",
+            zone_type="feeding",
+            zone_relation="near",
+            observation_span_seconds=3.0,
+        )
+
+    behavior_events = _build_behavior_events(payload, track_observations, notes="runtime-test")
+
+    assert len(behavior_events) == 1
+    assert _canonical_behavior_key(behavior_events[0].behavior_type) == "feeding"
+    assert behavior_events[0].zone_name == "Feed Zone"
+    assert behavior_events[0].notes is not None
+    assert "zone-rule:feeding" in behavior_events[0].notes

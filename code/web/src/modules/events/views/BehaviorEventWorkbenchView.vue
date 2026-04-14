@@ -5,34 +5,179 @@
         <p class="page-header__eyebrow">事件中心</p>
         <h2>行为事件中心</h2>
         <p class="page-header__text">
-          查看已入库的行为事件，并对历史图片、视频或边缘回传数据做补录推理与校验。
+          查看已入库的行为事件，并把当天牛群状态按行为分布和时间轴直观展示出来。
         </p>
       </div>
       <button class="ghost-button" type="button" @click="refreshAll">刷新数据</button>
     </header>
 
-    <section class="metrics-grid">
-      <article class="metric-card">
-        <span>累计事件</span>
-        <strong>{{ summary.total_count }}</strong>
-        <p>当前牧场内已写入的结构化行为事件总数。</p>
+    <section class="event-overview-grid">
+      <article class="panel panel--behavior-hero">
+        <header class="panel__header panel__header--stack">
+          <div>
+            <h3>今日状态看板</h3>
+            <p class="panel__subtext">
+              {{ selectedDeviceLabel }} · {{ activeOverview.date }}
+            </p>
+          </div>
+          <span class="panel__badge">{{ activeOverview.total_events }} 条事件</span>
+        </header>
+
+        <div class="behavior-kpi-grid">
+          <article class="behavior-kpi-card behavior-kpi-card--accent">
+            <span>累计事件</span>
+            <strong>{{ summary.total_count }}</strong>
+            <p>当前筛选范围内累计写入的行为事件总数。</p>
+          </article>
+          <article class="behavior-kpi-card">
+            <span>今日事件</span>
+            <strong>{{ summary.today_count }}</strong>
+            <p>从今日 00:00 到当前时间识别出的行为事件。</p>
+          </article>
+          <article class="behavior-kpi-card">
+            <span>躺卧事件</span>
+            <strong>{{ activeOverview.lying_event_count }}</strong>
+            <p>今日识别到的躺卧状态事件次数。</p>
+          </article>
+          <article class="behavior-kpi-card">
+            <span>站立时长</span>
+            <strong>{{ formatDuration(activeOverview.standing_duration_seconds) }}</strong>
+            <p>根据相邻事件时间估算的站立持续时间。</p>
+          </article>
+        </div>
+
+        <div class="behavior-insight-grid">
+          <article class="behavior-insight-card">
+            <span>主导状态</span>
+            <strong>{{ activeOverview.dominant_behavior || '暂无数据' }}</strong>
+            <p>按今日累计时长占比最高的行为状态。</p>
+          </article>
+          <article class="behavior-insight-card">
+            <span>覆盖时长</span>
+            <strong>{{ formatDuration(activeOverview.tracked_duration_seconds) }}</strong>
+            <p>当前可由事件流连续估算出的状态总时长。</p>
+          </article>
+          <article class="behavior-insight-card">
+            <span>最近模型</span>
+            <strong>{{ latestModel }}</strong>
+            <p>{{ latestSource }}</p>
+          </article>
+        </div>
+
+        <p class="summary summary--muted">
+          当前可视化按“相邻事件时间差”估算持续时长，适合展示今日状态走势；如果后续接入单牛追踪 ID，还可以继续细化到单头牛的日轨迹。
+        </p>
       </article>
-      <article class="metric-card">
-        <span>今日事件</span>
-        <strong>{{ summary.today_count }}</strong>
-        <p>按当前牧场时区统计的当日行为事件数量。</p>
-      </article>
-      <article class="metric-card">
-        <span>最近模型</span>
-        <strong>{{ latestModel }}</strong>
-        <p>最新一次导入结果对应的模型名称。</p>
-      </article>
-      <article class="metric-card">
-        <span>推理来源</span>
-        <strong>{{ latestSource }}</strong>
-        <p>用于生成最新事件的推理来源标识。</p>
+
+      <article class="panel">
+        <header class="panel__header panel__header--stack">
+          <div>
+            <h3>行为分布</h3>
+            <p class="panel__subtext">按今日事件数与状态时长汇总</p>
+          </div>
+        </header>
+
+        <div v-if="activeOverview.breakdown.length > 0" class="behavior-distribution">
+          <div class="behavior-distribution__bar" aria-hidden="true">
+            <div
+              v-for="item in activeOverview.breakdown"
+              :key="item.behavior_key"
+              class="behavior-distribution__segment"
+              :style="buildDistributionStyle(item)"
+              :title="`${item.behavior_type} · ${formatDuration(item.duration_seconds)}`"
+            />
+          </div>
+
+          <div class="behavior-breakdown-list">
+            <article
+              v-for="item in activeOverview.breakdown"
+              :key="item.behavior_key"
+              class="behavior-breakdown-item"
+            >
+              <div class="behavior-breakdown-item__top">
+                <div class="behavior-chip">
+                  <span
+                    class="behavior-chip__dot"
+                    :style="{ background: getBehaviorTheme(item.behavior_key).accent }"
+                  />
+                  <strong>{{ item.behavior_type }}</strong>
+                </div>
+                <strong>{{ item.event_count }} 次</strong>
+              </div>
+
+              <div class="behavior-progress" aria-hidden="true">
+                <div class="behavior-progress__track">
+                  <div
+                    class="behavior-progress__fill"
+                    :style="buildProgressStyle(item)"
+                  />
+                </div>
+              </div>
+
+              <div class="behavior-breakdown-item__meta">
+                <span>时长 {{ formatDuration(item.duration_seconds) }}</span>
+                <span>占比 {{ formatPercent(item.duration_share) }}</span>
+              </div>
+              <div class="behavior-breakdown-item__meta">
+                <span>牛只累计 {{ item.cow_count_total }}</span>
+                <span>事件占比 {{ formatPercent(item.event_share) }}</span>
+              </div>
+            </article>
+          </div>
+        </div>
+
+        <p v-else class="entity-note">
+          今日还没有可用于绘制分布图的行为事件。
+        </p>
       </article>
     </section>
+
+    <article class="panel panel--timeline">
+      <header class="panel__header panel__header--stack">
+        <div>
+          <h3>今日状态时间轴</h3>
+          <p class="panel__subtext">从 00:00 到当前时间的行为切换过程</p>
+        </div>
+        <span class="panel__badge">{{ activeOverview.timeline.length }} 段</span>
+      </header>
+
+      <div v-if="activeOverview.timeline.length > 0" class="behavior-timeline">
+        <div class="behavior-timeline__track">
+          <div
+            v-for="segment in activeOverview.timeline"
+            :key="`${segment.behavior_key}-${segment.started_at}-${segment.ended_at}`"
+            class="behavior-timeline__segment"
+            :style="buildTimelineStyle(segment)"
+            :title="formatTimelineTitle(segment)"
+          >
+            <span>{{ segment.behavior_type }}</span>
+          </div>
+        </div>
+
+        <div class="behavior-timeline__axis">
+          <span>{{ formatTime(activeOverview.window_started_at) }}</span>
+          <span>{{ formatTime(activeOverview.window_ended_at) }}</span>
+        </div>
+
+        <div class="behavior-timeline__legend">
+          <div
+            v-for="item in activeOverview.breakdown"
+            :key="`legend-${item.behavior_key}`"
+            class="behavior-chip behavior-chip--legend"
+          >
+            <span
+              class="behavior-chip__dot"
+              :style="{ background: getBehaviorTheme(item.behavior_key).accent }"
+            />
+            <span>{{ item.behavior_type }}</span>
+          </div>
+        </div>
+      </div>
+
+      <p v-else class="entity-note">
+        今日还没有状态时间轴数据，导入或识别事件后这里会自动更新。
+      </p>
+    </article>
 
     <div class="content-grid event-content-grid">
       <article class="panel">
@@ -163,7 +308,7 @@
         <div class="form-grid">
           <label class="field">
             <span>按设备筛选</span>
-            <select v-model="filters.deviceId" @change="loadEvents">
+            <select v-model="filters.deviceId" @change="handleFilterChange">
               <option value="">全部设备</option>
               <option v-for="device in devices" :key="device.id" :value="String(device.id)">
                 {{ device.name }}
@@ -173,7 +318,7 @@
 
           <label class="field">
             <span>显示条数</span>
-            <select v-model="filters.limit" @change="loadEvents">
+            <select v-model="filters.limit" @change="handleFilterChange">
               <option value="5">5 条</option>
               <option value="10">10 条</option>
               <option value="20">20 条</option>
@@ -246,8 +391,11 @@ import { fetchBehaviorEventSummary, fetchInferenceMeta, importBehaviorEvents, li
 import EventMediaViewer from '@/components/events/EventMediaViewer.vue';
 import type { DeviceSummary } from '@/types/device';
 import type {
+  BehaviorBreakdownItem,
   BehaviorEventStats,
   BehaviorEventSummary,
+  BehaviorTimelineSegment,
+  DailyBehaviorOverview,
   EventSourceType,
   InferenceMeta,
   InferenceMode,
@@ -267,14 +415,54 @@ interface ImportFormState {
   knnConfidenceThreshold: number;
 }
 
+interface BehaviorTheme {
+  accent: string;
+  soft: string;
+  text: string;
+}
+
+const behaviorThemeMap: Record<string, BehaviorTheme> = {
+  lying: {
+    accent: '#4f7cff',
+    soft: 'linear-gradient(135deg, rgba(79, 124, 255, 0.96), rgba(109, 156, 255, 0.82))',
+    text: '#f7fbff',
+  },
+  standing: {
+    accent: '#f08c2b',
+    soft: 'linear-gradient(135deg, rgba(240, 140, 43, 0.96), rgba(255, 180, 93, 0.82))',
+    text: '#fff9f1',
+  },
+  walking: {
+    accent: '#14a06f',
+    soft: 'linear-gradient(135deg, rgba(20, 160, 111, 0.96), rgba(74, 196, 148, 0.82))',
+    text: '#f4fffb',
+  },
+  feeding: {
+    accent: '#9c6ade',
+    soft: 'linear-gradient(135deg, rgba(156, 106, 222, 0.96), rgba(191, 149, 242, 0.82))',
+    text: '#fbf7ff',
+  },
+  drinking: {
+    accent: '#0b9fb8',
+    soft: 'linear-gradient(135deg, rgba(11, 159, 184, 0.96), rgba(86, 204, 227, 0.82))',
+    text: '#f3feff',
+  },
+  resting: {
+    accent: '#667085',
+    soft: 'linear-gradient(135deg, rgba(102, 112, 133, 0.96), rgba(142, 152, 173, 0.82))',
+    text: '#f7f9fb',
+  },
+  other: {
+    accent: '#8d9aa3',
+    soft: 'linear-gradient(135deg, rgba(141, 154, 163, 0.96), rgba(188, 196, 202, 0.82))',
+    text: '#f8fbfc',
+  },
+};
+
 const devices = ref<DeviceSummary[]>([]);
 const events = ref<BehaviorEventSummary[]>([]);
 const inferenceMeta = ref<InferenceMeta | null>(null);
-const summary = ref<BehaviorEventStats>({
-  total_count: 0,
-  today_count: 0,
-  recent_events: [],
-});
+const summary = ref<BehaviorEventStats>(createEmptyBehaviorStats());
 const loadError = ref('');
 const inferenceMetaError = ref('');
 const submitError = ref('');
@@ -289,6 +477,15 @@ const filters = reactive({
 let thresholdDefaultsInitialized = false;
 const form = reactive<ImportFormState>(createEmptyForm());
 
+const activeOverview = computed(() => summary.value.today_behavior_overview);
+const selectedDeviceLabel = computed(() => {
+  if (!filters.deviceId) {
+    return '全牧场';
+  }
+
+  const target = devices.value.find((device) => device.id === Number(filters.deviceId));
+  return target?.name ?? '当前设备';
+});
 const latestModel = computed(() => summary.value.recent_events[0]?.model_name ?? '暂无');
 const latestSource = computed(() => summary.value.recent_events[0]?.inference_source ?? '暂无');
 const yoloModelOptions = computed(() => inferenceMeta.value?.available_yolo_models ?? []);
@@ -322,6 +519,31 @@ const resolvedKnnConfidenceThreshold = computed(() =>
   ),
 );
 
+function createEmptyBehaviorOverview(): DailyBehaviorOverview {
+  const now = new Date().toISOString();
+  return {
+    date: new Date().toLocaleDateString(),
+    window_started_at: now,
+    window_ended_at: now,
+    total_events: 0,
+    tracked_duration_seconds: 0,
+    lying_event_count: 0,
+    standing_duration_seconds: 0,
+    dominant_behavior: null,
+    breakdown: [],
+    timeline: [],
+  };
+}
+
+function createEmptyBehaviorStats(): BehaviorEventStats {
+  return {
+    total_count: 0,
+    today_count: 0,
+    recent_events: [],
+    today_behavior_overview: createEmptyBehaviorOverview(),
+  };
+}
+
 function formatNowForInput() {
   const currentDate = new Date();
   const timezoneOffset = currentDate.getTimezoneOffset();
@@ -353,6 +575,35 @@ function createEmptyForm(): ImportFormState {
   };
 }
 
+function getBehaviorTheme(behaviorKey: string): BehaviorTheme {
+  return behaviorThemeMap[behaviorKey] ?? behaviorThemeMap.other;
+}
+
+function buildDistributionStyle(item: BehaviorBreakdownItem) {
+  const theme = getBehaviorTheme(item.behavior_key);
+  return {
+    background: theme.soft,
+    flexGrow: String(Math.max(item.duration_seconds, 1)),
+  };
+}
+
+function buildProgressStyle(item: BehaviorBreakdownItem) {
+  const theme = getBehaviorTheme(item.behavior_key);
+  return {
+    background: theme.soft,
+    width: `${Math.max(item.duration_share * 100, item.duration_seconds > 0 ? 6 : 0)}%`,
+  };
+}
+
+function buildTimelineStyle(segment: BehaviorTimelineSegment) {
+  const theme = getBehaviorTheme(segment.behavior_key);
+  return {
+    background: theme.soft,
+    color: theme.text,
+    flexGrow: String(Math.max(segment.duration_seconds, 1)),
+  };
+}
+
 function formatSourceType(sourceType: EventSourceType) {
   if (sourceType === 'video') {
     return '视频文件';
@@ -372,6 +623,42 @@ function formatConfidence(confidence: number) {
 
 function formatDate(value: string) {
   return new Date(value).toLocaleString();
+}
+
+function formatTime(value: string) {
+  return new Date(value).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function formatPercent(value: number) {
+  return `${Math.round(value * 100)}%`;
+}
+
+function formatDuration(seconds: number) {
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    return '0 分钟';
+  }
+
+  const totalMinutes = Math.floor(seconds / 60);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  if (hours > 0 && minutes > 0) {
+    return `${hours} 小时 ${minutes} 分钟`;
+  }
+  if (hours > 0) {
+    return `${hours} 小时`;
+  }
+  if (totalMinutes > 0) {
+    return `${totalMinutes} 分钟`;
+  }
+  return `${seconds} 秒`;
+}
+
+function formatTimelineTitle(segment: BehaviorTimelineSegment) {
+  return `${segment.behavior_type} · ${formatTime(segment.started_at)} - ${formatTime(segment.ended_at)} · ${formatDuration(segment.duration_seconds)}`;
 }
 
 function parseMetadata() {
@@ -458,19 +745,23 @@ async function loadInferenceMeta() {
 }
 
 async function loadSummary() {
-  summary.value = await fetchBehaviorEventSummary();
+  summary.value = await fetchBehaviorEventSummary(filters.deviceId ? Number(filters.deviceId) : undefined);
 }
 
 async function loadEvents() {
+  events.value = await listBehaviorEvents({
+    deviceId: filters.deviceId ? Number(filters.deviceId) : undefined,
+    limit: Number(filters.limit),
+  });
+}
+
+async function handleFilterChange() {
   loadError.value = '';
 
   try {
-    events.value = await listBehaviorEvents({
-      deviceId: filters.deviceId ? Number(filters.deviceId) : undefined,
-      limit: Number(filters.limit),
-    });
+    await Promise.all([loadSummary(), loadEvents()]);
   } catch (error) {
-    loadError.value = error instanceof Error ? error.message : '无法加载行为事件列表。';
+    loadError.value = error instanceof Error ? error.message : '无法加载行为事件数据。';
   }
 }
 
@@ -523,3 +814,245 @@ onMounted(async () => {
   await refreshAll();
 });
 </script>
+
+<style scoped>
+.event-overview-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+.panel__header--stack {
+  align-items: start;
+}
+
+.panel__subtext {
+  margin: 6px 0 0;
+  color: #62727d;
+}
+
+.panel--behavior-hero {
+  overflow: hidden;
+  background:
+    radial-gradient(circle at top right, rgba(79, 124, 255, 0.14), transparent 30%),
+    linear-gradient(180deg, rgba(248, 251, 255, 0.98), rgba(241, 247, 252, 0.98));
+}
+
+.behavior-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.behavior-kpi-card,
+.behavior-insight-card {
+  display: grid;
+  gap: 8px;
+  padding: 18px;
+  border: 1px solid rgba(79, 97, 108, 0.1);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.behavior-kpi-card--accent {
+  background: linear-gradient(135deg, rgba(35, 74, 120, 0.98), rgba(79, 124, 255, 0.88));
+  color: #f5f9ff;
+}
+
+.behavior-kpi-card span,
+.behavior-insight-card span {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.behavior-kpi-card strong,
+.behavior-insight-card strong {
+  font-size: clamp(1.4rem, 2.2vw, 2rem);
+  line-height: 1.1;
+}
+
+.behavior-kpi-card p,
+.behavior-insight-card p {
+  margin: 0;
+  color: #60707b;
+  line-height: 1.6;
+}
+
+.behavior-kpi-card--accent p {
+  color: rgba(245, 249, 255, 0.82);
+}
+
+.behavior-insight-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.summary--muted {
+  margin-top: 16px;
+}
+
+.behavior-distribution {
+  display: grid;
+  gap: 18px;
+}
+
+.behavior-distribution__bar {
+  display: flex;
+  min-height: 26px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(226, 234, 239, 0.9);
+}
+
+.behavior-distribution__segment {
+  min-width: 12px;
+}
+
+.behavior-breakdown-list {
+  display: grid;
+  gap: 12px;
+}
+
+.behavior-breakdown-item {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 18px;
+  background: rgba(244, 248, 250, 0.92);
+}
+
+.behavior-breakdown-item__top,
+.behavior-breakdown-item__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.behavior-breakdown-item__meta {
+  font-size: 13px;
+  color: #62727d;
+}
+
+.behavior-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.behavior-chip--legend {
+  color: #4c5d68;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.behavior-chip__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.behavior-progress__track {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(219, 229, 234, 0.95);
+}
+
+.behavior-progress__fill {
+  height: 100%;
+  border-radius: inherit;
+}
+
+.panel--timeline {
+  margin-bottom: 24px;
+}
+
+.behavior-timeline {
+  display: grid;
+  gap: 14px;
+}
+
+.behavior-timeline__track {
+  display: flex;
+  min-height: 64px;
+  overflow: hidden;
+  border-radius: 22px;
+  background: rgba(237, 243, 245, 0.95);
+}
+
+.behavior-timeline__segment {
+  display: flex;
+  align-items: end;
+  min-width: 12px;
+  padding: 10px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.behavior-timeline__segment span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.behavior-timeline__axis {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #61707b;
+  font-size: 13px;
+}
+
+.behavior-timeline__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+}
+
+.event-content-grid {
+  align-items: start;
+}
+
+@media (max-width: 1180px) {
+  .event-overview-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .behavior-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .behavior-insight-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .behavior-kpi-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .behavior-breakdown-item__top,
+  .behavior-breakdown-item__meta {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .behavior-timeline__segment {
+    min-width: 8px;
+    padding: 8px;
+  }
+
+  .behavior-timeline__segment span {
+    display: none;
+  }
+}
+</style>

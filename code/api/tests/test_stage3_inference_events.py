@@ -16,7 +16,10 @@ def auth_headers(token: str) -> dict[str, str]:
 
 
 def test_import_behavior_events_persists_records(client, db_session, monkeypatch) -> None:
+    captured_payload: dict[str, object] = {}
+
     def fake_inference_service(payload: dict[str, object], **_kwargs) -> dict[str, object]:
+        captured_payload.update(payload)
         occurred_at = datetime.fromisoformat(str(payload["occurred_at"]))
         return {
             "request_id": payload["request_id"],
@@ -85,6 +88,15 @@ def test_import_behavior_events_persists_records(client, db_session, monkeypatch
     assert first_event.model_version == "0.3.0"
     assert first_event.zone_name == "Water Zone"
 
+    metadata = captured_payload["metadata"]
+    assert isinstance(metadata, dict)
+    zone_candidates = metadata["zone_candidates"]
+    assert isinstance(zone_candidates, list)
+    assert zone_candidates[0]["name"] == "Water Zone"
+    assert zone_candidates[0]["zone_type"] == "water"
+    assert zone_candidates[0]["shape_type"] == "polygon"
+    assert len(zone_candidates[0]["points"]) >= 3
+
 
 def test_behavior_event_summary_and_filters(client, monkeypatch) -> None:
     def fake_inference_service(payload: dict[str, object], **_kwargs) -> dict[str, object]:
@@ -136,6 +148,8 @@ def test_behavior_event_summary_and_filters(client, monkeypatch) -> None:
     assert summary_payload["total_count"] == 1
     assert summary_payload["today_count"] == 1
     assert len(summary_payload["recent_events"]) == 1
+    assert summary_payload["today_behavior_overview"]["total_events"] == 1
+    assert isinstance(summary_payload["today_behavior_overview"]["breakdown"], list)
 
     list_response = client.get(
         "/api/v1/events?behavior_type=feeding&limit=10",
@@ -145,6 +159,84 @@ def test_behavior_event_summary_and_filters(client, monkeypatch) -> None:
     listed_events = list_response.json()["data"]
     assert len(listed_events) == 1
     assert listed_events[0]["behavior_type"] == "feeding"
+
+
+def test_behavior_event_summary_includes_daily_state_overview(client, monkeypatch) -> None:
+    def fake_inference_service(payload: dict[str, object], **_kwargs) -> dict[str, object]:
+        occurred_at = datetime.fromisoformat(str(payload["occurred_at"]))
+        return {
+            "request_id": payload["request_id"],
+            "service": "cow-monitor-inference",
+            "model_name": "yolo-knn-stage3-demo",
+            "model_version": "0.3.0",
+            "inference_source": "demo-pipeline",
+            "processed_at": datetime.now(UTC).isoformat(),
+            "behavior_events": [
+                {
+                    "device_code": payload["device_code"],
+                    "event_time": occurred_at.isoformat(),
+                    "behavior_type": "standing",
+                    "cow_count": 3,
+                    "confidence": 0.94,
+                    "zone_name": "Water Zone",
+                    "notes": None,
+                },
+                {
+                    "device_code": payload["device_code"],
+                    "event_time": (occurred_at + timedelta(minutes=10)).isoformat(),
+                    "behavior_type": "lying",
+                    "cow_count": 2,
+                    "confidence": 0.91,
+                    "zone_name": "Rest Zone",
+                    "notes": None,
+                },
+                {
+                    "device_code": payload["device_code"],
+                    "event_time": (occurred_at + timedelta(minutes=20)).isoformat(),
+                    "behavior_type": "feeding",
+                    "cow_count": 4,
+                    "confidence": 0.89,
+                    "zone_name": "Feed Zone",
+                    "notes": None,
+                },
+            ],
+            "raw_metadata": {"pipeline_mode": "demo"},
+        }
+
+    monkeypatch.setattr(
+        "app.modules.events.router.invoke_inference_service",
+        fake_inference_service,
+    )
+
+    token = login(client, "admin", "admin123")
+    occurred_at = datetime.now(UTC) - timedelta(minutes=30)
+
+    import_response = client.post(
+        "/api/v1/events/import",
+        json={
+            "device_code": "CAM-TEST-001",
+            "source_type": "video",
+            "source_uri": "demo://tests/sample-video.mp4",
+            "occurred_at": occurred_at.isoformat(),
+            "metadata": {},
+        },
+        headers=auth_headers(token),
+    )
+    assert import_response.status_code == 200
+
+    summary_response = client.get(
+        "/api/v1/events/summary?device_id=1",
+        headers=auth_headers(token),
+    )
+    assert summary_response.status_code == 200
+
+    overview = summary_response.json()["data"]["today_behavior_overview"]
+    assert overview["total_events"] == 3
+    assert overview["lying_event_count"] == 1
+    assert overview["standing_duration_seconds"] == 600
+    assert len(overview["timeline"]) >= 3
+    assert any(item["behavior_key"] == "standing" for item in overview["breakdown"])
+    assert any(item["behavior_key"] == "lying" for item in overview["breakdown"])
 
 
 def test_media_preview_and_source_proxy(client, monkeypatch) -> None:

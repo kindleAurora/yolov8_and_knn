@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import mimetypes
 import statistics
 import sys
@@ -51,6 +52,17 @@ BEHAVIOR_LABEL_MAP = {
     "饮水": "饮水",
     "采食": "采食",
 }
+ZONE_TYPE_MAP = {
+    "water": "water",
+    "drink": "water",
+    "drinking": "water",
+    "feeding": "feeding",
+    "feed": "feeding",
+    "eating": "feeding",
+    "eat": "feeding",
+    "rest": "rest",
+    "resting": "rest",
+}
 
 
 @dataclass
@@ -64,6 +76,27 @@ class TrackObservation:
     labels: list[str] = field(default_factory=list)
     confidences: list[float] = field(default_factory=list)
     first_offset_seconds: float | None = None
+    total_observed_seconds: float = 0.0
+    zone_dwell_seconds: dict[str, float] = field(default_factory=dict)
+    zone_hit_counts: Counter[str] = field(default_factory=Counter)
+    zone_types: dict[str, str] = field(default_factory=dict)
+    zone_relations: dict[str, Counter[str]] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ZoneCandidate:
+    name: str
+    zone_type: str
+    shape_type: str
+    points: tuple[tuple[float, float], ...]
+
+
+@dataclass(frozen=True)
+class ZoneMatch:
+    name: str
+    zone_type: str
+    relation: str
+    distance: float
 
 
 def _normalize_label(value: str) -> str:
@@ -91,6 +124,227 @@ def _translate_behavior_label(raw_label: str) -> str | None:
 def _is_cow_label(raw_label: str) -> bool:
     normalized = _normalize_label(raw_label)
     return any(alias in normalized or alias in raw_label for alias in COW_CLASS_ALIASES)
+
+
+def _normalize_zone_type(raw_value: str) -> str | None:
+    normalized = _normalize_label(raw_value)
+    if normalized in ZONE_TYPE_MAP:
+        return ZONE_TYPE_MAP[normalized]
+
+    if "water" in normalized or "drink" in normalized:
+        return "water"
+    if "feed" in normalized or "eat" in normalized:
+        return "feeding"
+    if "rest" in normalized:
+        return "rest"
+    return None
+
+
+def _canonical_behavior_key(raw_label: str) -> str:
+    normalized = _normalize_label(raw_label)
+    mapping = {
+        "lying": "lying",
+        "lie": "lying",
+        "rest": "resting",
+        "resting": "resting",
+        "standing": "standing",
+        "stand": "standing",
+        "walking": "walking",
+        "walk": "walking",
+        "drinking": "drinking",
+        "drink": "drinking",
+        "feeding": "feeding",
+        "feed": "feeding",
+        "eating": "feeding",
+        "eat": "feeding",
+    }
+    for behavior_key in ("lying", "resting", "standing", "walking", "drinking", "feeding"):
+        translated_label = _translate_behavior_label(behavior_key)
+        if translated_label:
+            mapping[translated_label] = behavior_key
+    return mapping.get(normalized, mapping.get(raw_label, normalized))
+
+
+def _coerce_zone_points(raw_points: object) -> tuple[tuple[float, float], ...]:
+    if not isinstance(raw_points, list):
+        return ()
+
+    parsed_points: list[tuple[float, float]] = []
+    for item in raw_points:
+        if not isinstance(item, dict):
+            continue
+
+        x = item.get("x")
+        y = item.get("y")
+        if not isinstance(x, (int, float)) or not isinstance(y, (int, float)):
+            continue
+
+        parsed_points.append(
+            (
+                max(0.0, min(float(x), 1.0)),
+                max(0.0, min(float(y), 1.0)),
+            )
+        )
+
+    return tuple(parsed_points)
+
+
+def _extract_zone_candidates(payload: InferenceRequest) -> list[ZoneCandidate]:
+    raw_candidates = payload.metadata.get("zone_candidates")
+    if not isinstance(raw_candidates, list):
+        return []
+
+    zone_candidates: list[ZoneCandidate] = []
+    for item in raw_candidates:
+        if not isinstance(item, dict):
+            continue
+
+        zone_name = item.get("name")
+        raw_zone_type = item.get("zone_type")
+        if not isinstance(zone_name, str) or not zone_name:
+            continue
+        if not isinstance(raw_zone_type, str):
+            continue
+
+        zone_type = _normalize_zone_type(raw_zone_type)
+        if zone_type is None:
+            continue
+
+        points = _coerce_zone_points(item.get("points"))
+        if len(points) < 3:
+            continue
+
+        shape_type = item.get("shape_type")
+        zone_candidates.append(
+            ZoneCandidate(
+                name=zone_name,
+                zone_type=zone_type,
+                shape_type=str(shape_type) if isinstance(shape_type, str) else "polygon",
+                points=points,
+            )
+        )
+
+    return zone_candidates
+
+
+def _point_in_polygon(point: tuple[float, float], polygon: tuple[tuple[float, float], ...]) -> bool:
+    x, y = point
+    inside = False
+    point_count = len(polygon)
+    for index in range(point_count):
+        x1, y1 = polygon[index]
+        x2, y2 = polygon[(index + 1) % point_count]
+        intersects = ((y1 > y) != (y2 > y)) and (
+            x < ((x2 - x1) * (y - y1) / ((y2 - y1) or 1e-9)) + x1
+        )
+        if intersects:
+            inside = not inside
+    return inside
+
+
+def _point_to_segment_distance(
+    point: tuple[float, float],
+    segment_start: tuple[float, float],
+    segment_end: tuple[float, float],
+) -> float:
+    px, py = point
+    ax, ay = segment_start
+    bx, by = segment_end
+    dx = bx - ax
+    dy = by - ay
+    segment_length_squared = dx * dx + dy * dy
+    if segment_length_squared <= 1e-9:
+        return math.hypot(px - ax, py - ay)
+
+    projection = ((px - ax) * dx + (py - ay) * dy) / segment_length_squared
+    projection = max(0.0, min(1.0, projection))
+    closest_x = ax + projection * dx
+    closest_y = ay + projection * dy
+    return math.hypot(px - closest_x, py - closest_y)
+
+
+def _distance_to_polygon(point: tuple[float, float], polygon: tuple[tuple[float, float], ...]) -> float:
+    return min(
+        _point_to_segment_distance(point, polygon[index], polygon[(index + 1) % len(polygon)])
+        for index in range(len(polygon))
+    )
+
+
+def _polygon_centroid(polygon: tuple[tuple[float, float], ...]) -> tuple[float, float]:
+    return (
+        sum(point[0] for point in polygon) / max(len(polygon), 1),
+        sum(point[1] for point in polygon) / max(len(polygon), 1),
+    )
+
+
+def _match_detection_zone(
+    zone_candidates: list[ZoneCandidate],
+    *,
+    x1: int,
+    y1: int,
+    x2: int,
+    y2: int,
+    frame_width: int,
+    frame_height: int,
+) -> ZoneMatch | None:
+    if not zone_candidates or frame_width <= 0 or frame_height <= 0:
+        return None
+
+    anchor_point = (
+        max(0.0, min(((x1 + x2) / 2.0) / frame_width, 1.0)),
+        max(0.0, min(y2 / frame_height, 1.0)),
+    )
+    inside_matches: list[tuple[float, ZoneCandidate]] = []
+    near_matches: list[tuple[float, ZoneCandidate]] = []
+
+    for zone in zone_candidates:
+        if zone.shape_type != "polygon":
+            continue
+
+        if _point_in_polygon(anchor_point, zone.points):
+            centroid_x, centroid_y = _polygon_centroid(zone.points)
+            inside_matches.append((math.hypot(anchor_point[0] - centroid_x, anchor_point[1] - centroid_y), zone))
+            continue
+
+        distance = _distance_to_polygon(anchor_point, zone.points)
+        if distance <= settings.zone_proximity_threshold:
+            near_matches.append((distance, zone))
+
+    if inside_matches:
+        distance, zone = min(inside_matches, key=lambda item: item[0])
+        return ZoneMatch(name=zone.name, zone_type=zone.zone_type, relation="inside", distance=distance)
+
+    if near_matches:
+        distance, zone = min(near_matches, key=lambda item: item[0])
+        return ZoneMatch(name=zone.name, zone_type=zone.zone_type, relation="near", distance=distance)
+
+    return None
+
+
+def _build_zone_logic_metadata() -> dict[str, object]:
+    return {
+        "anchor_point": "bbox-bottom-center",
+        "match_order": ["inside-zone", "near-zone"],
+        "near_threshold": settings.zone_proximity_threshold,
+        "behavior_rules": {
+            "feeding": {
+                "zone_type": "feeding",
+                "min_dwell_seconds": settings.zone_feeding_min_dwell_seconds,
+                "min_share": settings.zone_behavior_min_ratio,
+            },
+            "drinking": {
+                "zone_type": "water",
+                "min_dwell_seconds": settings.zone_drinking_min_dwell_seconds,
+                "min_share": settings.zone_behavior_min_ratio,
+            },
+            "resting": {
+                "zone_type": "rest",
+                "min_dwell_seconds": settings.zone_resting_min_dwell_seconds,
+                "min_share": settings.zone_behavior_min_ratio,
+                "fallback_to_lying": True,
+            },
+        },
+    }
 
 
 def _build_events_from_overrides(payload: InferenceRequest) -> list[BehaviorEventCandidate]:
@@ -902,12 +1156,102 @@ def _append_track_observation(
     label: str,
     confidence: float,
     offset_seconds: float,
+    *,
+    zone_name: str | None = None,
+    zone_type: str | None = None,
+    zone_relation: str | None = None,
+    observation_span_seconds: float = 0.0,
 ) -> None:
     observation = track_observations.setdefault(track_id, TrackObservation())
     observation.labels.append(label)
     observation.confidences.append(confidence)
     if observation.first_offset_seconds is None:
         observation.first_offset_seconds = offset_seconds
+    observation.total_observed_seconds += max(float(observation_span_seconds), 0.0)
+    if zone_name and zone_type:
+        observation.zone_dwell_seconds[zone_name] = (
+            observation.zone_dwell_seconds.get(zone_name, 0.0) + max(float(observation_span_seconds), 0.0)
+        )
+        observation.zone_hit_counts[zone_name] += 1
+        observation.zone_types[zone_name] = zone_type
+        if zone_relation:
+            relation_counter = observation.zone_relations.setdefault(zone_name, Counter())
+            relation_counter[zone_relation] += 1
+
+
+def _select_dominant_zone(observation: TrackObservation) -> tuple[str | None, str | None, float, float, str | None]:
+    if observation.zone_dwell_seconds:
+        zone_name, dwell_seconds = max(
+            observation.zone_dwell_seconds.items(),
+            key=lambda item: (item[1], observation.zone_hit_counts.get(item[0], 0)),
+        )
+        total_seconds = max(observation.total_observed_seconds, 1e-9)
+        share = dwell_seconds / total_seconds
+    elif observation.zone_hit_counts:
+        zone_name, hit_count = observation.zone_hit_counts.most_common(1)[0]
+        dwell_seconds = 0.0
+        share = hit_count / max(sum(observation.zone_hit_counts.values()), 1)
+    else:
+        return None, None, 0.0, 0.0, None
+
+    relation_counter = observation.zone_relations.get(zone_name, Counter())
+    relation = relation_counter.most_common(1)[0][0] if relation_counter else None
+    return zone_name, observation.zone_types.get(zone_name), dwell_seconds, share, relation
+
+
+def _resolve_zone_refined_behavior(
+    observation: TrackObservation,
+    majority_label: str,
+) -> tuple[str, str | None, str | None]:
+    base_key = _canonical_behavior_key(majority_label)
+    final_key = base_key
+    zone_name, zone_type, dwell_seconds, share, relation = _select_dominant_zone(observation)
+
+    if zone_name and zone_type:
+        if zone_type == "feeding" and base_key != "lying":
+            if (
+                dwell_seconds >= settings.zone_feeding_min_dwell_seconds
+                and share >= settings.zone_behavior_min_ratio
+            ):
+                final_key = "feeding"
+        elif zone_type == "water" and base_key != "lying":
+            if (
+                dwell_seconds >= settings.zone_drinking_min_dwell_seconds
+                and share >= settings.zone_behavior_min_ratio
+            ):
+                final_key = "drinking"
+        elif zone_type == "rest":
+            if base_key == "lying":
+                final_key = "lying"
+            elif (
+                base_key != "walking"
+                and dwell_seconds >= settings.zone_resting_min_dwell_seconds
+                and share >= settings.zone_behavior_min_ratio
+            ):
+                final_key = "resting"
+
+    resolved_label = _translate_behavior_label(final_key) or majority_label
+    if final_key == base_key or not zone_name or not zone_type:
+        return resolved_label, zone_name, None
+
+    rule_note = (
+        f"zone-rule:{final_key} base={base_key} zone={zone_name} type={zone_type} "
+        f"dwell={dwell_seconds:.1f}s share={share:.0%}"
+    )
+    if relation:
+        rule_note += f" relation={relation}"
+    return resolved_label, zone_name, rule_note
+
+
+def _compose_event_notes(base_notes: str, reason_counts: Counter[str]) -> str:
+    if not reason_counts:
+        return base_notes
+
+    top_reason, top_count = reason_counts.most_common(1)[0]
+    if len(reason_counts) == 1:
+        return f"{base_notes}; {top_reason} tracks={top_count}"
+
+    return f"{base_notes}; {top_reason} tracks={top_count}; zone-rule-variants={len(reason_counts)}"
 
 
 def _build_behavior_events(
@@ -915,13 +1259,17 @@ def _build_behavior_events(
     track_observations: dict[str, TrackObservation],
     notes: str,
 ) -> list[BehaviorEventCandidate]:
-    aggregated: dict[str, dict[str, Any]] = {}
+    aggregated: dict[tuple[str, str | None], dict[str, Any]] = {}
 
     for observation in track_observations.values():
         if not observation.labels:
             continue
 
         majority_label = Counter(observation.labels).most_common(1)[0][0]
+        resolved_label, zone_name, rule_note = _resolve_zone_refined_behavior(
+            observation,
+            majority_label=majority_label,
+        )
         label_confidences = [
             confidence
             for label, confidence in zip(
@@ -936,23 +1284,27 @@ def _build_behavior_events(
         )
 
         bucket = aggregated.setdefault(
-            majority_label,
+            (resolved_label, zone_name),
             {
                 "count": 0,
                 "confidences": [],
                 "offsets": [],
+                "zone_name": zone_name,
+                "reason_counts": Counter(),
             },
         )
         bucket["count"] += 1
         bucket["confidences"].append(object_confidence)
         bucket["offsets"].append(observation.first_offset_seconds or 0.0)
+        if rule_note:
+            bucket["reason_counts"][rule_note] += 1
 
     behavior_events: list[BehaviorEventCandidate] = []
     sorted_items = sorted(
         aggregated.items(),
-        key=lambda item: (-item[1]["count"], item[0]),
+        key=lambda item: (-item[1]["count"], item[0][0], item[0][1] or ""),
     )
-    for behavior_type, bucket in sorted_items:
+    for (behavior_type, zone_name), bucket in sorted_items:
         average_confidence = sum(bucket["confidences"]) / max(len(bucket["confidences"]), 1)
         event_offset_seconds = (
             float(statistics.median(bucket["offsets"]))
@@ -966,8 +1318,8 @@ def _build_behavior_events(
                 behavior_type=behavior_type,
                 cow_count=int(bucket["count"]),
                 confidence=round(average_confidence, 4),
-                zone_name=None,
-                notes=notes,
+                zone_name=zone_name,
+                notes=_compose_event_notes(notes, bucket["reason_counts"]),
             )
         )
 
@@ -1044,6 +1396,7 @@ def _analyze_image_source(
     classifier: Any | None,
 ) -> tuple[list[BehaviorEventCandidate], dict[str, Any]]:
     _, extract_hog_feature, _ = _load_knn_tools() if classifier is not None else (None, None, None)
+    zone_candidates = _extract_zone_candidates(payload)
     yolo_confidence = _resolve_yolo_confidence(payload)
     yolo_iou = _resolve_yolo_iou(payload)
     knn_confidence_threshold = _resolve_knn_confidence_threshold(payload)
@@ -1088,12 +1441,25 @@ def _analyze_image_source(
             if not final_label:
                 continue
 
+            matched_zone = _match_detection_zone(
+                zone_candidates,
+                x1=x1,
+                y1=y1,
+                x2=x2,
+                y2=y2,
+                frame_width=image.shape[1],
+                frame_height=image.shape[0],
+            )
+
             _append_track_observation(
                 track_observations=track_observations,
                 track_id=f"image-box-{box_index}",
                 label=final_label,
                 confidence=_combine_confidences(detection_confidence, classifier_confidence),
                 offset_seconds=0.0,
+                zone_name=matched_zone.name if matched_zone else None,
+                zone_type=matched_zone.zone_type if matched_zone else None,
+                zone_relation=matched_zone.relation if matched_zone else None,
             )
 
     notes = "真实 YOLO + KNN 推理结果" if classifier is not None else "真实 YOLO 推理结果"
@@ -1102,6 +1468,8 @@ def _analyze_image_source(
         "processed_frames": 1,
         "track_count": len(track_observations),
         "frame_stride": 1,
+        "zone_candidate_count": len(zone_candidates),
+        "zone_behavior_logic": _build_zone_logic_metadata(),
     }
 
 
@@ -1111,6 +1479,7 @@ def _analyze_realtime_stream_source(
     classifier: Any | None,
 ) -> tuple[list[BehaviorEventCandidate], dict[str, Any]]:
     _, extract_hog_feature, _ = _load_knn_tools() if classifier is not None else (None, None, None)
+    zone_candidates = _extract_zone_candidates(payload)
     yolo_confidence = _resolve_yolo_confidence(payload)
     yolo_iou = _resolve_yolo_iou(payload)
     knn_confidence_threshold = _resolve_knn_confidence_threshold(payload)
@@ -1156,12 +1525,25 @@ def _analyze_realtime_stream_source(
             if not final_label:
                 continue
 
+            matched_zone = _match_detection_zone(
+                zone_candidates,
+                x1=x1,
+                y1=y1,
+                x2=x2,
+                y2=y2,
+                frame_width=image.shape[1],
+                frame_height=image.shape[0],
+            )
+
             _append_track_observation(
                 track_observations=track_observations,
                 track_id=f"realtime-box-{box_index}",
                 label=final_label,
                 confidence=_combine_confidences(detection_confidence, classifier_confidence),
                 offset_seconds=0.0,
+                zone_name=matched_zone.name if matched_zone else None,
+                zone_type=matched_zone.zone_type if matched_zone else None,
+                zone_relation=matched_zone.relation if matched_zone else None,
             )
 
     notes = (
@@ -1176,6 +1558,8 @@ def _analyze_realtime_stream_source(
         "frame_stride": 1,
         "analysis_profile": "realtime",
         "source_strategy": "single-frame-snapshot",
+        "zone_candidate_count": len(zone_candidates),
+        "zone_behavior_logic": _build_zone_logic_metadata(),
     }
 
 
@@ -1189,11 +1573,13 @@ def _analyze_video_source(
 
     source_ref = _resolve_media_source(payload)
     fps = _estimate_fps(source_ref)
+    zone_candidates = _extract_zone_candidates(payload)
     yolo_confidence = _resolve_yolo_confidence(payload)
     yolo_iou = _resolve_yolo_iou(payload)
     knn_confidence_threshold = _resolve_knn_confidence_threshold(payload)
     max_video_frames = _resolve_max_video_frames(payload)
     frame_stride = _resolve_frame_stride(payload)
+    observation_span_seconds = frame_stride / max(fps, 1.0)
     track_states: dict[str, TrackState] = {}
     track_observations: dict[str, TrackObservation] = {}
 
@@ -1275,12 +1661,26 @@ def _analyze_video_source(
             if not final_label:
                 continue
 
+            matched_zone = _match_detection_zone(
+                zone_candidates,
+                x1=x1,
+                y1=y1,
+                x2=x2,
+                y2=y2,
+                frame_width=frame.shape[1],
+                frame_height=frame.shape[0],
+            )
+
             _append_track_observation(
                 track_observations=track_observations,
                 track_id=track_id,
                 label=final_label,
                 confidence=_combine_confidences(detection_confidence, classifier_confidence),
                 offset_seconds=offset_seconds,
+                zone_name=matched_zone.name if matched_zone else None,
+                zone_type=matched_zone.zone_type if matched_zone else None,
+                zone_relation=matched_zone.relation if matched_zone else None,
+                observation_span_seconds=observation_span_seconds,
             )
 
     notes = "真实 YOLO + KNN 推理结果" if classifier is not None else "真实 YOLO 推理结果"
@@ -1291,6 +1691,8 @@ def _analyze_video_source(
         "frame_stride": frame_stride,
         "max_video_frames": max_video_frames,
         "estimated_fps": round(fps, 2),
+        "zone_candidate_count": len(zone_candidates),
+        "zone_behavior_logic": _build_zone_logic_metadata(),
     }
 
 

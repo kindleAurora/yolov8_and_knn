@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -11,6 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.common.responses import success_response
+from app.modules.alerts.service import evaluate_alert_rules
 from app.core.audit import record_audit_log
 from app.core.database import get_db
 from app.core.deps import get_current_user
@@ -115,10 +116,53 @@ class BehaviorEventImportResult(BaseModel):
     behavior_events: list[BehaviorEventSummary]
 
 
+class BehaviorBreakdownItem(BaseModel):
+    behavior_key: str
+    behavior_type: str
+    event_count: int
+    cow_count_total: int
+    duration_seconds: int
+    event_share: float
+    duration_share: float
+
+
+class BehaviorTimelineSegment(BaseModel):
+    behavior_key: str
+    behavior_type: str
+    started_at: datetime
+    ended_at: datetime
+    duration_seconds: int
+
+
+class DailyBehaviorOverview(BaseModel):
+    date: str
+    window_started_at: datetime
+    window_ended_at: datetime
+    total_events: int
+    tracked_duration_seconds: int
+    lying_event_count: int
+    standing_duration_seconds: int
+    dominant_behavior: str | None
+    breakdown: list[BehaviorBreakdownItem]
+    timeline: list[BehaviorTimelineSegment]
+
+
 class BehaviorEventStats(BaseModel):
     total_count: int
     today_count: int
     recent_events: list[BehaviorEventSummary]
+    today_behavior_overview: DailyBehaviorOverview
+
+
+CANONICAL_BEHAVIOR_LABELS = {
+    "lying": "躺卧",
+    "standing": "站立",
+    "walking": "行走",
+    "feeding": "采食",
+    "drinking": "饮水",
+    "resting": "休息",
+    "other": "其他",
+}
 
 
 def _event_query():
@@ -163,6 +207,14 @@ def _get_device_or_404(db: Session, *, device_code: str, farm_id: int) -> Device
     return device
 
 
+def _get_farm_timezone(user: User) -> ZoneInfo | timezone:
+    timezone_name = user.farm.timezone if user.farm else "Asia/Shanghai"
+    try:
+        return ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError:
+        return timezone.utc
+
+
 def _resolve_zone_map(db: Session, *, farm_id: int, device_id: int) -> dict[str, Zone]:
     zones = db.scalars(
         select(Zone).where(
@@ -186,13 +238,15 @@ def _build_import_metadata(
 ) -> dict[str, Any]:
     metadata = dict(payload.metadata)
     unique_zones = {zone.id: zone for zone in zone_map.values()}
-    metadata.setdefault(
-        "zone_candidates",
-        [
-            {"name": zone.name, "zone_type": zone.zone_type}
-            for zone in unique_zones.values()
-        ],
-    )
+    metadata["zone_candidates"] = [
+        {
+            "name": zone.name,
+            "zone_type": zone.zone_type,
+            "shape_type": zone.shape_type,
+            "points": zone.points,
+        }
+        for zone in unique_zones.values()
+    ]
     metadata.setdefault("device_name", device.name)
     if device.install_location:
         metadata.setdefault("install_location", device.install_location)
@@ -238,15 +292,15 @@ def _create_media_asset(
     return media_asset
 
 
-def _start_of_today_in_utc(user: User) -> datetime:
-    timezone_name = user.farm.timezone if user.farm else "Asia/Shanghai"
-    try:
-        farm_timezone = ZoneInfo(timezone_name)
-    except ZoneInfoNotFoundError:
-        farm_timezone = timezone.utc
-
+def _today_window(user: User) -> tuple[datetime, datetime, str]:
+    farm_timezone = _get_farm_timezone(user)
     current_time = datetime.now(farm_timezone)
-    return current_time.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
+    start_of_day = current_time.replace(hour=0, minute=0, second=0, microsecond=0)
+    return (
+        start_of_day.astimezone(timezone.utc),
+        current_time.astimezone(timezone.utc),
+        start_of_day.date().isoformat(),
+    )
 
 
 def _resolve_inference_timeout(source_type: str) -> int:
@@ -309,6 +363,156 @@ def _read_numeric_metadata(metadata: dict[str, Any], key: str) -> float | None:
         return None
 
 
+def _normalize_behavior_value(value: str) -> str:
+    return value.strip().lower().replace("_", " ").replace("-", " ")
+
+
+def _ensure_utc_datetime(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _canonical_behavior_key(raw_value: str) -> str:
+    normalized = _normalize_behavior_value(raw_value)
+
+    if normalized in {"lying", "lie", "lay down"}:
+        return "lying"
+    if normalized in {"standing", "stand"}:
+        return "standing"
+    if normalized in {"walking", "walk", "moving"}:
+        return "walking"
+    if normalized in {"feeding", "feed", "eating", "eat"}:
+        return "feeding"
+    if normalized in {"drinking", "drink"}:
+        return "drinking"
+    if normalized in {"resting", "rest"}:
+        return "resting"
+
+    if "躺" in raw_value or "卧" in raw_value or "lying" in normalized:
+        return "lying"
+    if "站" in raw_value or "standing" in normalized:
+        return "standing"
+    if "走" in raw_value or "walking" in normalized:
+        return "walking"
+    if "采食" in raw_value or "进食" in raw_value or "feeding" in normalized or "eat" in normalized:
+        return "feeding"
+    if "饮水" in raw_value or "喝水" in raw_value or "drinking" in normalized:
+        return "drinking"
+    if "休息" in raw_value or "rest" in normalized:
+        return "resting"
+    return "other"
+
+
+def _display_behavior_label(raw_value: str, behavior_key: str) -> str:
+    return CANONICAL_BEHAVIOR_LABELS.get(behavior_key, raw_value.strip() or "其他")
+
+
+def _build_daily_behavior_overview(
+    events: list[BehaviorEvent],
+    *,
+    window_started_at: datetime,
+    window_ended_at: datetime,
+    date_label: str,
+) -> DailyBehaviorOverview:
+    normalized_window_started_at = _ensure_utc_datetime(window_started_at)
+    normalized_window_ended_at = _ensure_utc_datetime(window_ended_at)
+    ordered_events = sorted(
+        events,
+        key=lambda item: (_ensure_utc_datetime(item.occurred_at), item.id),
+    )
+    aggregates: dict[str, dict[str, int | str]] = {}
+    timeline: list[BehaviorTimelineSegment] = []
+
+    for index, event in enumerate(ordered_events):
+        event_occurred_at = _ensure_utc_datetime(event.occurred_at)
+        behavior_key = _canonical_behavior_key(event.behavior_type)
+        behavior_label = _display_behavior_label(event.behavior_type, behavior_key)
+        bucket = aggregates.setdefault(
+            behavior_key,
+            {
+                "behavior_type": behavior_label,
+                "event_count": 0,
+                "cow_count_total": 0,
+                "duration_seconds": 0,
+            },
+        )
+        bucket["event_count"] = int(bucket["event_count"]) + 1
+        bucket["cow_count_total"] = int(bucket["cow_count_total"]) + max(event.cow_count, 0)
+
+        next_time = normalized_window_ended_at
+        if index + 1 < len(ordered_events):
+            next_time = min(
+                _ensure_utc_datetime(ordered_events[index + 1].occurred_at),
+                normalized_window_ended_at,
+            )
+        duration_seconds = max(0, int((next_time - event_occurred_at).total_seconds()))
+        bucket["duration_seconds"] = int(bucket["duration_seconds"]) + duration_seconds
+
+        if duration_seconds == 0:
+            continue
+
+        segment_start = max(event_occurred_at, normalized_window_started_at)
+        segment_end = next_time
+        if segment_end <= segment_start:
+            continue
+
+        if timeline and timeline[-1].behavior_key == behavior_key and timeline[-1].ended_at == segment_start:
+            previous_segment = timeline[-1]
+            timeline[-1] = BehaviorTimelineSegment(
+                behavior_key=previous_segment.behavior_key,
+                behavior_type=previous_segment.behavior_type,
+                started_at=previous_segment.started_at,
+                ended_at=segment_end,
+                duration_seconds=int((segment_end - previous_segment.started_at).total_seconds()),
+            )
+            continue
+
+        timeline.append(
+            BehaviorTimelineSegment(
+                behavior_key=behavior_key,
+                behavior_type=behavior_label,
+                started_at=segment_start,
+                ended_at=segment_end,
+                duration_seconds=int((segment_end - segment_start).total_seconds()),
+            )
+        )
+
+    total_events = len(ordered_events)
+    tracked_duration_seconds = sum(segment.duration_seconds for segment in timeline)
+
+    breakdown = [
+        BehaviorBreakdownItem(
+            behavior_key=behavior_key,
+            behavior_type=str(item["behavior_type"]),
+            event_count=int(item["event_count"]),
+            cow_count_total=int(item["cow_count_total"]),
+            duration_seconds=int(item["duration_seconds"]),
+            event_share=(int(item["event_count"]) / total_events) if total_events else 0,
+            duration_share=(int(item["duration_seconds"]) / tracked_duration_seconds) if tracked_duration_seconds else 0,
+        )
+        for behavior_key, item in aggregates.items()
+    ]
+    breakdown.sort(key=lambda item: (-item.duration_seconds, -item.event_count, item.behavior_type))
+
+    dominant_behavior = breakdown[0].behavior_type if breakdown else None
+    lying_bucket = next((item for item in breakdown if item.behavior_key == "lying"), None)
+    standing_bucket = next((item for item in breakdown if item.behavior_key == "standing"), None)
+
+    return DailyBehaviorOverview(
+        date=date_label,
+        window_started_at=normalized_window_started_at,
+        window_ended_at=normalized_window_ended_at,
+        total_events=total_events,
+        tracked_duration_seconds=tracked_duration_seconds,
+        lying_event_count=lying_bucket.event_count if lying_bucket else 0,
+        standing_duration_seconds=standing_bucket.duration_seconds if standing_bucket else 0,
+        dominant_behavior=dominant_behavior,
+        breakdown=breakdown,
+        timeline=timeline,
+    )
+
+
 @router.get("")
 def list_behavior_events(
     device_id: int | None = Query(default=None),
@@ -333,29 +537,51 @@ def list_behavior_events(
 
 @router.get("/summary")
 def get_behavior_event_summary(
+    device_id: int | None = Query(default=None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
+    base_filters = [BehaviorEvent.farm_id == current_user.farm_id]
+    if device_id is not None:
+        base_filters.append(BehaviorEvent.device_id == device_id)
+
+    today_started_at, today_ended_at, date_label = _today_window(current_user)
     total_count = db.scalar(
-        select(func.count(BehaviorEvent.id)).where(BehaviorEvent.farm_id == current_user.farm_id)
+        select(func.count(BehaviorEvent.id)).where(*base_filters)
     ) or 0
     today_count = db.scalar(
         select(func.count(BehaviorEvent.id)).where(
-            BehaviorEvent.farm_id == current_user.farm_id,
-            BehaviorEvent.occurred_at >= _start_of_today_in_utc(current_user),
+            *base_filters,
+            BehaviorEvent.occurred_at >= today_started_at,
+            BehaviorEvent.occurred_at < today_ended_at,
         )
     ) or 0
     recent_events = db.scalars(
         _event_query()
-        .where(BehaviorEvent.farm_id == current_user.farm_id)
+        .where(*base_filters)
         .order_by(BehaviorEvent.occurred_at.desc(), BehaviorEvent.id.desc())
         .limit(5)
+    ).all()
+    today_events = db.scalars(
+        _event_query()
+        .where(
+            *base_filters,
+            BehaviorEvent.occurred_at >= today_started_at,
+            BehaviorEvent.occurred_at < today_ended_at,
+        )
+        .order_by(BehaviorEvent.occurred_at.asc(), BehaviorEvent.id.asc())
     ).all()
 
     payload = BehaviorEventStats(
         total_count=total_count,
         today_count=today_count,
         recent_events=[_serialize_event(event) for event in recent_events],
+        today_behavior_overview=_build_daily_behavior_overview(
+            today_events,
+            window_started_at=today_started_at,
+            window_ended_at=today_ended_at,
+            date_label=date_label,
+        ),
     )
     return success_response(payload.model_dump())
 
@@ -452,6 +678,7 @@ def import_behavior_events(
     )
 
     created_event_ids: list[int] = []
+    created_events: list[BehaviorEvent] = []
     for event_candidate in inference_result.behavior_events:
         zone = zone_map.get(event_candidate.zone_name) if event_candidate.zone_name else None
         behavior_event = BehaviorEvent(
@@ -478,6 +705,14 @@ def import_behavior_events(
         db.add(behavior_event)
         db.flush()
         created_event_ids.append(behavior_event.id)
+        created_events.append(behavior_event)
+
+    created_alerts = evaluate_alert_rules(
+        db,
+        current_user=current_user,
+        device=device,
+        events=created_events,
+    )
 
     record_audit_log(
         db,
@@ -493,6 +728,7 @@ def import_behavior_events(
             "imported_count": len(created_event_ids),
             "model_name": inference_result.model_name,
             "model_version": inference_result.model_version,
+            "generated_alert_count": len(created_alerts),
         },
         request=request,
     )

@@ -47,6 +47,20 @@ class Settings(BaseSettings):
     motion_window: int = Field(default=6, alias="MOTION_WINDOW")
     motion_low_threshold: float = Field(default=0.005, alias="MOTION_LOW_THRESHOLD")
     motion_high_threshold: float = Field(default=0.01, alias="MOTION_HIGH_THRESHOLD")
+    zone_proximity_threshold: float = Field(default=0.04, alias="ZONE_PROXIMITY_THRESHOLD")
+    zone_behavior_min_ratio: float = Field(default=0.6, alias="ZONE_BEHAVIOR_MIN_RATIO")
+    zone_feeding_min_dwell_seconds: float = Field(
+        default=8.0,
+        alias="ZONE_FEEDING_MIN_DWELL_SECONDS",
+    )
+    zone_drinking_min_dwell_seconds: float = Field(
+        default=6.0,
+        alias="ZONE_DRINKING_MIN_DWELL_SECONDS",
+    )
+    zone_resting_min_dwell_seconds: float = Field(
+        default=12.0,
+        alias="ZONE_RESTING_MIN_DWELL_SECONDS",
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",

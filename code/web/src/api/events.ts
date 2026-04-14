@@ -30,8 +30,14 @@ export function listBehaviorEvents(options: ListBehaviorEventsOptions = {}): Pro
   return apiRequest<BehaviorEventSummary[]>(`/api/v1/events${search ? `?${search}` : ''}`);
 }
 
-export function fetchBehaviorEventSummary(): Promise<BehaviorEventStats> {
-  return apiRequest<BehaviorEventStats>('/api/v1/events/summary');
+export function fetchBehaviorEventSummary(deviceId?: number): Promise<BehaviorEventStats> {
+  const query = new URLSearchParams();
+  if (deviceId) {
+    query.set('device_id', String(deviceId));
+  }
+
+  const search = query.toString();
+  return apiRequest<BehaviorEventStats>(`/api/v1/events/summary${search ? `?${search}` : ''}`);
 }
 
 export function fetchInferenceMeta(): Promise<InferenceMeta> {
