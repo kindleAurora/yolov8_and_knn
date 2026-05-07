@@ -1,4 +1,5 @@
 import type { DeviceSummary } from '@/types/device';
+import { mediaHlsBaseUrl } from '@/config/runtime';
 
 type LiveStreamDevice = Pick<DeviceSummary, 'stream_url' | 'config'>;
 
@@ -40,7 +41,7 @@ export function resolveDeviceBrowserStreamUrl(
   }
 
   const hlsBaseUrl = normalizeBaseUrl(
-    options.hlsBaseUrl ?? import.meta.env.VITE_MEDIA_MTX_HLS_BASE_URL ?? '',
+    options.hlsBaseUrl ?? mediaHlsBaseUrl,
   );
   if (!hlsBaseUrl) {
     return null;

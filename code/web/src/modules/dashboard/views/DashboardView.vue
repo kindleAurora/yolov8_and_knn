@@ -223,6 +223,7 @@ import { listDevices } from '@/api/devices';
 import { fetchBehaviorEventSummary } from '@/api/events';
 import DeviceLivePlayer from '@/components/monitor/DeviceLivePlayer.vue';
 import { APP_NAME } from '@/config/branding';
+import { apiDocsUrl } from '@/config/runtime';
 import { useAuthStore } from '@/stores/auth';
 import { usePlatformStore } from '@/stores/platform';
 import type { AlertSummary } from '@/types/alert';
@@ -241,7 +242,7 @@ const openAlertCount = ref(0);
 const recentEvents = ref<BehaviorEventSummary[]>([]);
 const recentAlerts = ref<AlertSummary[]>([]);
 const devices = ref<DeviceSummary[]>([]);
-const docsUrl = `${import.meta.env.VITE_API_BASE_URL}/docs`;
+const docsUrl = apiDocsUrl;
 const dependencyNameMap: Record<string, string> = {
   postgres: '数据库服务',
   redis: '缓存服务',

@@ -47,6 +47,33 @@ docker compose -f code/infra/docker/docker-compose.yml exec -T api alembic upgra
 - API 健康检查：`http://localhost:8000/health`
 - 推理服务健康检查：`http://localhost:8001/health`
 
+## 局域网 IP 部署
+
+如果下一步要把整套系统部署到本机并通过局域网 IP 直接访问，优先使用生产部署编排：
+
+```powershell
+docker compose -f code/infra/docker/docker-compose.prod.yml up -d --build
+docker compose -f code/infra/docker/docker-compose.prod.yml exec -T api alembic upgrade head
+```
+
+部署完成后：
+
+- Web 入口：`http://<你的电脑IP>/`
+- API 文档：`http://<你的电脑IP>/docs`
+- API 接口：`http://<你的电脑IP>/api/v1/...`
+- HLS 直播流：`http://<你的电脑IP>/hls/<stream-path>/index.m3u8`
+
+当前生产部署做了这些调整：
+
+- 前端由 `nginx` 提供静态文件，不再依赖 `vite dev server`
+- Web、API、HLS 统一走同一个 IP，避免浏览器访问远程设备时命中 `localhost`
+- API 与推理服务以非 `--reload` 模式运行，更适合常驻部署
+
+上线前还需要确认两件事：
+
+- Docker Desktop 已启动，并允许容器正常运行
+- Windows 防火墙放通 Web 端口（默认 `80`）以及 RTSP 端口（默认 `8554`，如果外部设备需要推流/拉流）
+
 ## 本地开发
 
 先复制环境变量模板：

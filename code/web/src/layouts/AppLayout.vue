@@ -42,11 +42,12 @@
 import { useRouter } from 'vue-router';
 
 import { APP_DESCRIPTION, APP_NAME, APP_OPERATION_LABEL, APP_SUBTITLE } from '@/config/branding';
+import { apiDocsUrl } from '@/config/runtime';
 import { useAuthStore } from '@/stores/auth';
 
 const authStore = useAuthStore();
 const router = useRouter();
-const docsUrl = `${import.meta.env.VITE_API_BASE_URL}/docs`;
+const docsUrl = apiDocsUrl;
 
 async function handleLogout() {
   await authStore.logout();

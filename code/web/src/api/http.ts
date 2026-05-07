@@ -1,7 +1,6 @@
 import type { ApiEnvelope } from '@/types/api';
+import { apiBaseUrl } from '@/config/runtime';
 import { getStoredToken } from '@/utils/session';
-
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
 
 type ApiRequestOptions = NonNullable<Parameters<typeof fetch>[1]> & {
   auth?: boolean;
