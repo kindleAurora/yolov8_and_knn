@@ -26,6 +26,7 @@ from ultralytics import YOLO  # noqa: E402
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 VIDEO_SUFFIXES = {".mp4", ".avi", ".mov", ".mkv", ".wmv"}
+PROGRESS_BAR_WIDTH = 30
 
 
 @dataclass
@@ -72,6 +73,11 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=10,
         help="How many frames to keep an unseen track before forgetting its movement history.",
+    )
+    parser.add_argument(
+        "--no-motion",
+        action="store_true",
+        help="Disable motion-based label refinement and run pure YOLO + KNN classification.",
     )
     return parser.parse_args()
 
@@ -140,6 +146,18 @@ def compute_motion_score(state: TrackState, box_width: int, box_height: int) -> 
     average_step = float(np.mean(step_distances))
     reference_scale = max(float(box_width), float(box_height), 1.0)
     return average_step / reference_scale
+
+
+def print_video_progress(frame_index: int, total_frames: int) -> None:
+    if total_frames > 0:
+        percent = min(frame_index / total_frames, 1.0)
+        filled_width = int(PROGRESS_BAR_WIDTH * percent)
+        bar = "#" * filled_width + "-" * (PROGRESS_BAR_WIDTH - filled_width)
+        message = f"\rProcessing video: [{bar}] {percent * 100:6.2f}% ({frame_index}/{total_frames})"
+    else:
+        message = f"\rProcessing video: {frame_index} frames"
+
+    print(message, end="", flush=True)
 
 
 def refine_behavior_label(
@@ -285,6 +303,7 @@ def process_video(
     motion_low_threshold: float,
     motion_threshold: float,
     track_max_age: int,
+    use_motion: bool,
 ) -> None:
     capture = cv2.VideoCapture(str(source))
     if not capture.isOpened():
@@ -295,6 +314,7 @@ def process_video(
         fps = fallback_fps
     width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    total_frames = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
     capture.release()
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -308,28 +328,33 @@ def process_video(
         raise ValueError(f"Failed to create output video: {output_path}")
 
     track_states: dict[int, TrackState] = {}
+    result_stream = (
+        model.track(source=str(source), conf=conf, iou=iou, stream=True, persist=True, verbose=False)
+        if use_motion
+        else model.predict(source=str(source), conf=conf, iou=iou, stream=True, verbose=False)
+    )
 
     try:
-        for frame_index, result in enumerate(
-            model.track(source=str(source), conf=conf, iou=iou, stream=True, persist=True, verbose=False),
-            start=1,
-        ):
-            prune_track_states(track_states, frame_index=frame_index, track_max_age=track_max_age)
+        for frame_index, result in enumerate(result_stream, start=1):
+            if use_motion:
+                prune_track_states(track_states, frame_index=frame_index, track_max_age=track_max_age)
             frame = result.orig_img
             annotated = annotate_frame(
                 frame=frame,
                 result=result,
                 classifier=classifier,
                 frame_index=frame_index,
-                track_states=track_states,
+                track_states=track_states if use_motion else None,
                 motion_window=motion_window,
                 motion_low_threshold=motion_low_threshold,
                 motion_threshold=motion_threshold,
             )
             writer.write(annotated)
+            print_video_progress(frame_index, total_frames)
     finally:
         writer.release()
 
+    print()
     print(f"Annotated video saved to: {output_path}")
 
 
@@ -353,7 +378,8 @@ def main() -> None:
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
     source_suffix = args.source.suffix.lower()
-    output_name = f"{args.source.stem}_yolo_knn{args.source.suffix}"
+    motion_suffix = "_no_motion" if source_suffix in VIDEO_SUFFIXES and args.no_motion else ""
+    output_name = f"{args.source.stem}_yolo_knn{motion_suffix}{args.source.suffix}"
     output_path = args.output_dir / output_name
 
     if source_suffix in IMAGE_SUFFIXES:
@@ -371,6 +397,7 @@ def main() -> None:
             motion_low_threshold=args.motion_low_threshold,
             motion_threshold=args.motion_threshold,
             track_max_age=args.track_max_age,
+            use_motion=not args.no_motion,
         )
     else:
         raise ValueError(f"Unsupported source type: {args.source}")
