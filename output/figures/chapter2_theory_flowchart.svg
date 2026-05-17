@@ -1,0 +1,118 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="3600" height="1800" viewBox="0 0 3600 1800">
+<rect width="3600" height="1800" fill="#F7F9FC"/>
+<defs><marker id="arrow" markerWidth="14" markerHeight="14" refX="12" refY="7" orient="auto"><path d="M0,0 L14,7 L0,14 z" fill="#64748B"/></marker></defs>
+<text x="1800" y="125" text-anchor="middle" font-family="Microsoft YaHei, SimSun, sans-serif" font-size="58" font-weight="700" fill="#1F2937">第二章理论基础流程图</text>
+<text x="1800" y="185" text-anchor="middle" font-family="Microsoft YaHei, SimSun, sans-serif" font-size="27" fill="#64748B">YOLOv8 目标检测、DeepSORT 多目标跟踪与 KNN 行为分类的处理链</text>
+<rect x="105" y="480" width="370" height="210" rx="30" fill="#EEF0FF" stroke="#5B5FC7" stroke-width="3"/>
+<text x="290" y="575" text-anchor="middle" font-family="Microsoft YaHei, SimSun, sans-serif" font-size="30" font-weight="700" fill="#5B5FC7">牧场视频 / 图像输入</text>
+<text x="290" y="640" text-anchor="middle" font-family="Microsoft YaHei, SimSun, sans-serif" font-size="20" fill="#64748B">连续帧或单帧图像</text>
+<line x1="475" y1="585" x2="540" y2="585" stroke="#64748B" stroke-width="8" marker-end="url(#arrow)"/>
+<rect x="555" y="315" width="730" height="1080" rx="30" fill="#fff" stroke="#CBD5E1" stroke-width="3"/>
+<rect x="555" y="315" width="730" height="136" rx="30" fill="#EAF1FF"/>
+<text x="595" y="370" font-family="Microsoft YaHei, SimSun, sans-serif" font-size="33" font-weight="700" fill="#2563EB">YOLOv8 目标检测</text>
+<rect x="597" y="495" width="646" height="132" rx="18" fill="#fff" stroke="#D6DEE9" stroke-width="2"/>
+<rect x="621" y="527" width="52" height="52" rx="16" fill="#2563EB"/>
+<text x="647" y="562" text-anchor="middle" font-family="Microsoft YaHei, SimSun, sans-serif" font-size="21" font-weight="700" fill="#fff">1</text>
+<text x="697" y="550" font-family="Microsoft YaHei, SimSun, sans-serif" font-size="24" font-weight="700" fill="#1F2937">图像预处理</text>
+<text x="697" y="588" font-size="19" fill="#64748B">尺寸调整、归一化后送入神经网络。</text>
+<line x1="920" y1="631" x2="920" y2="645" stroke="#94A3B8" stroke-width="5" marker-end="url(#arrow)"/>
+<rect x="597" y="649" width="646" height="132" rx="18" fill="#fff" stroke="#D6DEE9" stroke-width="2"/>
+<rect x="621" y="681" width="52" height="52" rx="16" fill="#2563EB"/>
+<text x="647" y="716" text-anchor="middle" font-family="Microsoft YaHei, SimSun, sans-serif" font-size="21" font-weight="700" fill="#fff">2</text>
+<text x="697" y="704" font-family="Microsoft YaHei, SimSun, sans-serif" font-size="24" font-weight="700" fill="#1F2937">Backbone 特征提取</text>
+<text x="697" y="742" font-size="19" fill="#64748B">提取颜色、纹理、边缘、形状和语义特征。</text>
+<line x1="920" y1="785" x2="920" y2="799" stroke="#94A3B8" stroke-width="5" marker-end="url(#arrow)"/>
+<rect x="597" y="803" width="646" height="132" rx="18" fill="#fff" stroke="#D6DEE9" stroke-width="2"/>
+<rect x="621" y="835" width="52" height="52" rx="16" fill="#2563EB"/>
+<text x="647" y="870" text-anchor="middle" font-family="Microsoft YaHei, SimSun, sans-serif" font-size="21" font-weight="700" fill="#fff">3</text>
+<text x="697" y="858" font-family="Microsoft YaHei, SimSun, sans-serif" font-size="24" font-weight="700" fill="#1F2937">Neck 多尺度融合</text>
+<text x="697" y="896" font-size="19" fill="#64748B">融合浅层细节与深层语义，增强大小目标检测能力。</text>
+<line x1="920" y1="939" x2="920" y2="953" stroke="#94A3B8" stroke-width="5" marker-end="url(#arrow)"/>
+<rect x="597" y="957" width="646" height="132" rx="18" fill="#fff" stroke="#D6DEE9" stroke-width="2"/>
+<rect x="621" y="989" width="52" height="52" rx="16" fill="#2563EB"/>
+<text x="647" y="1024" text-anchor="middle" font-family="Microsoft YaHei, SimSun, sans-serif" font-size="21" font-weight="700" fill="#fff">4</text>
+<text x="697" y="1012" font-family="Microsoft YaHei, SimSun, sans-serif" font-size="24" font-weight="700" fill="#1F2937">Head 解耦预测</text>
+<text x="697" y="1050" font-size="19" fill="#64748B">分类分支预测类别，回归分支定位边界框。</text>
+<line x1="920" y1="1093" x2="920" y2="1107" stroke="#94A3B8" stroke-width="5" marker-end="url(#arrow)"/>
+<rect x="597" y="1111" width="646" height="132" rx="18" fill="#fff" stroke="#D6DEE9" stroke-width="2"/>
+<rect x="621" y="1143" width="52" height="52" rx="16" fill="#2563EB"/>
+<text x="647" y="1178" text-anchor="middle" font-family="Microsoft YaHei, SimSun, sans-serif" font-size="21" font-weight="700" fill="#fff">5</text>
+<text x="697" y="1166" font-family="Microsoft YaHei, SimSun, sans-serif" font-size="24" font-weight="700" fill="#1F2937">Anchor-Free + NMS</text>
+<text x="697" y="1204" font-size="19" fill="#64748B">直接预测目标中心与边界框，删除重复检测框。</text>
+<rect x="1385" y="315" width="730" height="1080" rx="30" fill="#fff" stroke="#CBD5E1" stroke-width="3"/>
+<rect x="1385" y="315" width="730" height="136" rx="30" fill="#E7F6EF"/>
+<text x="1425" y="370" font-family="Microsoft YaHei, SimSun, sans-serif" font-size="33" font-weight="700" fill="#0F8A5F">DeepSORT 目标跟踪</text>
+<rect x="1427" y="495" width="646" height="132" rx="18" fill="#fff" stroke="#D6DEE9" stroke-width="2"/>
+<rect x="1451" y="527" width="52" height="52" rx="16" fill="#0F8A5F"/>
+<text x="1477" y="562" text-anchor="middle" font-family="Microsoft YaHei, SimSun, sans-serif" font-size="21" font-weight="700" fill="#fff">1</text>
+<text x="1527" y="550" font-family="Microsoft YaHei, SimSun, sans-serif" font-size="24" font-weight="700" fill="#1F2937">检测结果输入</text>
+<text x="1527" y="588" font-size="19" fill="#64748B">接收每帧牛只检测框、类别和置信度。</text>
+<line x1="1750" y1="631" x2="1750" y2="645" stroke="#94A3B8" stroke-width="5" marker-end="url(#arrow)"/>
+<rect x="1427" y="649" width="646" height="132" rx="18" fill="#fff" stroke="#D6DEE9" stroke-width="2"/>
+<rect x="1451" y="681" width="52" height="52" rx="16" fill="#0F8A5F"/>
+<text x="1477" y="716" text-anchor="middle" font-family="Microsoft YaHei, SimSun, sans-serif" font-size="21" font-weight="700" fill="#fff">2</text>
+<text x="1527" y="704" font-family="Microsoft YaHei, SimSun, sans-serif" font-size="24" font-weight="700" fill="#1F2937">卡尔曼滤波预测</text>
+<text x="1527" y="742" font-size="19" fill="#64748B">根据已有轨迹状态预测当前帧目标位置。</text>
+<line x1="1750" y1="785" x2="1750" y2="799" stroke="#94A3B8" stroke-width="5" marker-end="url(#arrow)"/>
+<rect x="1427" y="803" width="646" height="132" rx="18" fill="#fff" stroke="#D6DEE9" stroke-width="2"/>
+<rect x="1451" y="835" width="52" height="52" rx="16" fill="#0F8A5F"/>
+<text x="1477" y="870" text-anchor="middle" font-family="Microsoft YaHei, SimSun, sans-serif" font-size="21" font-weight="700" fill="#fff">3</text>
+<text x="1527" y="858" font-family="Microsoft YaHei, SimSun, sans-serif" font-size="24" font-weight="700" fill="#1F2937">外观特征提取</text>
+<text x="1527" y="896" font-size="19" fill="#64748B">对检测框区域提取特征向量，描述目标外观。</text>
+<line x1="1750" y1="939" x2="1750" y2="953" stroke="#94A3B8" stroke-width="5" marker-end="url(#arrow)"/>
+<rect x="1427" y="957" width="646" height="132" rx="18" fill="#fff" stroke="#D6DEE9" stroke-width="2"/>
+<rect x="1451" y="989" width="52" height="52" rx="16" fill="#0F8A5F"/>
+<text x="1477" y="1024" text-anchor="middle" font-family="Microsoft YaHei, SimSun, sans-serif" font-size="21" font-weight="700" fill="#fff">4</text>
+<text x="1527" y="1012" font-family="Microsoft YaHei, SimSun, sans-serif" font-size="24" font-weight="700" fill="#1F2937">数据关联计算</text>
+<text x="1527" y="1050" font-size="19" fill="#64748B">综合运动距离与外观距离构建匹配代价。</text>
+<line x1="1750" y1="1093" x2="1750" y2="1107" stroke="#94A3B8" stroke-width="5" marker-end="url(#arrow)"/>
+<rect x="1427" y="1111" width="646" height="132" rx="18" fill="#fff" stroke="#D6DEE9" stroke-width="2"/>
+<rect x="1451" y="1143" width="52" height="52" rx="16" fill="#0F8A5F"/>
+<text x="1477" y="1178" text-anchor="middle" font-family="Microsoft YaHei, SimSun, sans-serif" font-size="21" font-weight="700" fill="#fff">5</text>
+<text x="1527" y="1166" font-family="Microsoft YaHei, SimSun, sans-serif" font-size="24" font-weight="700" fill="#1F2937">匈牙利匹配与轨迹管理</text>
+<text x="1527" y="1204" font-size="19" fill="#64748B">完成最优分配，更新、新建或删除轨迹。</text>
+<rect x="2215" y="315" width="730" height="1080" rx="30" fill="#fff" stroke="#CBD5E1" stroke-width="3"/>
+<rect x="2215" y="315" width="730" height="136" rx="30" fill="#FFF2D9"/>
+<text x="2255" y="370" font-family="Microsoft YaHei, SimSun, sans-serif" font-size="33" font-weight="700" fill="#D97706">KNN 行为分类</text>
+<rect x="2257" y="495" width="646" height="132" rx="18" fill="#fff" stroke="#D6DEE9" stroke-width="2"/>
+<rect x="2281" y="527" width="52" height="52" rx="16" fill="#D97706"/>
+<text x="2307" y="562" text-anchor="middle" font-family="Microsoft YaHei, SimSun, sans-serif" font-size="21" font-weight="700" fill="#fff">1</text>
+<text x="2357" y="550" font-family="Microsoft YaHei, SimSun, sans-serif" font-size="24" font-weight="700" fill="#1F2937">样本特征表示</text>
+<text x="2357" y="588" font-size="19" fill="#64748B">使用 HOG 梯度方向特征与检测框长宽比特征。</text>
+<line x1="2580" y1="631" x2="2580" y2="645" stroke="#94A3B8" stroke-width="5" marker-end="url(#arrow)"/>
+<rect x="2257" y="649" width="646" height="132" rx="18" fill="#fff" stroke="#D6DEE9" stroke-width="2"/>
+<rect x="2281" y="681" width="52" height="52" rx="16" fill="#D97706"/>
+<text x="2307" y="716" text-anchor="middle" font-family="Microsoft YaHei, SimSun, sans-serif" font-size="21" font-weight="700" fill="#fff">2</text>
+<text x="2357" y="704" font-family="Microsoft YaHei, SimSun, sans-serif" font-size="24" font-weight="700" fill="#1F2937">距离度量</text>
+<text x="2357" y="742" font-size="19" fill="#64748B">计算待分类样本与训练样本的欧氏距离。</text>
+<line x1="2580" y1="785" x2="2580" y2="799" stroke="#94A3B8" stroke-width="5" marker-end="url(#arrow)"/>
+<rect x="2257" y="803" width="646" height="132" rx="18" fill="#fff" stroke="#D6DEE9" stroke-width="2"/>
+<rect x="2281" y="835" width="52" height="52" rx="16" fill="#D97706"/>
+<text x="2307" y="870" text-anchor="middle" font-family="Microsoft YaHei, SimSun, sans-serif" font-size="21" font-weight="700" fill="#fff">3</text>
+<text x="2357" y="858" font-family="Microsoft YaHei, SimSun, sans-serif" font-size="24" font-weight="700" fill="#1F2937">K 近邻选择</text>
+<text x="2357" y="896" font-size="19" fill="#64748B">选取距离最近的 K 个训练样本。</text>
+<line x1="2580" y1="939" x2="2580" y2="953" stroke="#94A3B8" stroke-width="5" marker-end="url(#arrow)"/>
+<rect x="2257" y="957" width="646" height="132" rx="18" fill="#fff" stroke="#D6DEE9" stroke-width="2"/>
+<rect x="2281" y="989" width="52" height="52" rx="16" fill="#D97706"/>
+<text x="2307" y="1024" text-anchor="middle" font-family="Microsoft YaHei, SimSun, sans-serif" font-size="21" font-weight="700" fill="#fff">4</text>
+<text x="2357" y="1012" font-family="Microsoft YaHei, SimSun, sans-serif" font-size="24" font-weight="700" fill="#1F2937">普通多数投票</text>
+<text x="2357" y="1050" font-size="19" fill="#64748B">根据邻近样本类别票数确定预测类别。</text>
+<line x1="2580" y1="1093" x2="2580" y2="1107" stroke="#94A3B8" stroke-width="5" marker-end="url(#arrow)"/>
+<rect x="2257" y="1111" width="646" height="132" rx="18" fill="#fff" stroke="#D6DEE9" stroke-width="2"/>
+<rect x="2281" y="1143" width="52" height="52" rx="16" fill="#D97706"/>
+<text x="2307" y="1178" text-anchor="middle" font-family="Microsoft YaHei, SimSun, sans-serif" font-size="21" font-weight="700" fill="#fff">5</text>
+<text x="2357" y="1166" font-family="Microsoft YaHei, SimSun, sans-serif" font-size="24" font-weight="700" fill="#1F2937">K 值实验确定</text>
+<text x="2357" y="1204" font-size="19" fill="#64748B">平衡分类稳定性和局部分类能力。</text>
+<line x1="1285" y1="585" x2="1368" y2="585" stroke="#64748B" stroke-width="8" marker-end="url(#arrow)"/>
+<line x1="2115" y1="585" x2="2198" y2="585" stroke="#64748B" stroke-width="8" marker-end="url(#arrow)"/>
+<line x1="2945" y1="585" x2="3030" y2="585" stroke="#64748B" stroke-width="8" marker-end="url(#arrow)"/>
+<rect x="3045" y="480" width="450" height="275" rx="30" fill="#fff" stroke="#CBD5E1" stroke-width="3"/>
+<text x="3085" y="560" font-family="Microsoft YaHei, SimSun, sans-serif" font-size="32" font-weight="700" fill="#1F2937">理论输出</text>
+<text x="3085" y="625" font-family="Microsoft YaHei, SimSun, sans-serif" font-size="20" fill="#64748B">牛只检测框、类别、置信度</text>
+<text x="3085" y="675" font-family="Microsoft YaHei, SimSun, sans-serif" font-size="20" fill="#64748B">牛只身份 ID 与运动轨迹</text>
+<text x="3085" y="725" font-family="Microsoft YaHei, SimSun, sans-serif" font-size="20" fill="#64748B">基础行为分类结果</text>
+<rect x="410" y="1470" width="2780" height="190" rx="28" fill="#fff" stroke="#CBD5E1" stroke-width="3"/>
+<text x="460" y="1535" font-family="Microsoft YaHei, SimSun, sans-serif" font-size="28" font-weight="700" fill="#1F2937">章节逻辑关系</text>
+<text x="460" y="1590" font-size="23" fill="#64748B">目标检测提供单帧位置与类别；目标跟踪在时间维度维护同一牛只的轨迹；KNN 利用特征空间近邻投票完成行为判别。三者共同构成第三章融合检测与行为监测</text>
+<text x="460" y="1620" font-size="23" fill="#64748B">方法的理论基础。</text>
+</svg>

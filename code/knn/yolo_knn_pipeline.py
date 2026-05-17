@@ -79,6 +79,9 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Disable motion-based label refinement and run pure YOLO + KNN classification.",
     )
+    parser.add_argument("--box-thickness", type=int, default=4, help="Bounding box line thickness in pixels.")
+    parser.add_argument("--label-font-scale", type=float, default=0.9, help="OpenCV font scale for labels.")
+    parser.add_argument("--label-thickness", type=int, default=2, help="Label text thickness in pixels.")
     return parser.parse_args()
 
 
@@ -186,6 +189,29 @@ def refine_behavior_label(
     return knn_label, motion_score, "motion-middle-knn"
 
 
+def wrap_label_parts(
+    label_parts: list[str],
+    max_width: int,
+    font_face: int,
+    font_scale: float,
+    thickness: int,
+) -> list[str]:
+    lines: list[str] = []
+    current = ""
+    for part in label_parts:
+        candidate = part if not current else f"{current} | {part}"
+        text_width = cv2.getTextSize(candidate, font_face, font_scale, thickness)[0][0]
+        if not current or text_width <= max_width:
+            current = candidate
+        else:
+            lines.append(current)
+            current = part
+
+    if current:
+        lines.append(current)
+    return lines
+
+
 def annotate_frame(
     frame: np.ndarray,
     result,
@@ -195,9 +221,18 @@ def annotate_frame(
     motion_window: int = 6,
     motion_low_threshold: float = 0.015,
     motion_threshold: float = 0.03,
+    box_thickness: int = 4,
+    label_font_scale: float = 0.9,
+    label_thickness: int = 2,
 ) -> np.ndarray:
     annotated = frame.copy()
     height, width = annotated.shape[:2]
+    font_face = cv2.FONT_HERSHEY_SIMPLEX
+    box_thickness = max(1, box_thickness)
+    label_font_scale = max(0.1, label_font_scale)
+    label_thickness = max(1, label_thickness)
+    label_padding = max(8, int(round(label_font_scale * 10)))
+    line_gap = max(5, int(round(label_font_scale * 6)))
 
     if result.boxes is None:
         return annotated
@@ -259,29 +294,71 @@ def annotate_frame(
         label_parts.append(f"yolo={detection_conf:.2f}")
         if use_motion_rule:
             label_parts.append(f"rule={motion_reason}")
-        label = " | ".join(label_parts)
 
-        cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 215, 255), 2)
-        text_width = min(width - x1, max(280, 9 * len(label)))
-        cv2.rectangle(annotated, (x1, max(0, y1 - 28)), (x1 + text_width, y1), (0, 215, 255), -1)
-        cv2.putText(
-            annotated,
-            label,
-            (x1 + 4, max(18, y1 - 8)),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.5,
-            (20, 20, 20),
-            2,
-            cv2.LINE_AA,
+        cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 215, 255), box_thickness)
+
+        max_text_width = max(120, width - x1 - label_padding * 2 - 1)
+        label_lines = wrap_label_parts(
+            label_parts=label_parts,
+            max_width=max_text_width,
+            font_face=font_face,
+            font_scale=label_font_scale,
+            thickness=label_thickness,
         )
+        text_metrics = [
+            cv2.getTextSize(line, font_face, label_font_scale, label_thickness)
+            for line in label_lines
+        ]
+        text_width = max((size[0][0] for size in text_metrics), default=0)
+        text_height = sum(size[0][1] + size[1] for size in text_metrics)
+        label_width = min(width - x1 - 1, text_width + label_padding * 2)
+        label_height = min(
+            height,
+            text_height + label_padding * 2 + line_gap * max(0, len(label_lines) - 1),
+        )
+        label_top = max(0, y1 - label_height)
+        label_bottom = min(height - 1, label_top + label_height)
+        cv2.rectangle(annotated, (x1, label_top), (x1 + label_width, label_bottom), (0, 215, 255), -1)
+
+        text_y = label_top + label_padding
+        for line, (size, baseline) in zip(label_lines, text_metrics):
+            text_y += size[1]
+            cv2.putText(
+                annotated,
+                line,
+                (x1 + label_padding, text_y),
+                font_face,
+                label_font_scale,
+                (20, 20, 20),
+                label_thickness,
+                cv2.LINE_AA,
+            )
+            text_y += baseline + line_gap
 
     return annotated
 
 
-def process_image(source: Path, model: YOLO, classifier: NumpyKNNClassifier, output_path: Path, conf: float, iou: float) -> None:
+def process_image(
+    source: Path,
+    model: YOLO,
+    classifier: NumpyKNNClassifier,
+    output_path: Path,
+    conf: float,
+    iou: float,
+    box_thickness: int,
+    label_font_scale: float,
+    label_thickness: int,
+) -> None:
     frame = imread_unicode(source)
     results = model.predict(source=frame, conf=conf, iou=iou, verbose=False)
-    annotated = annotate_frame(frame, results[0], classifier)
+    annotated = annotate_frame(
+        frame,
+        results[0],
+        classifier,
+        box_thickness=box_thickness,
+        label_font_scale=label_font_scale,
+        label_thickness=label_thickness,
+    )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     success, encoded = cv2.imencode(output_path.suffix or ".jpg", annotated)
@@ -304,6 +381,9 @@ def process_video(
     motion_threshold: float,
     track_max_age: int,
     use_motion: bool,
+    box_thickness: int,
+    label_font_scale: float,
+    label_thickness: int,
 ) -> None:
     capture = cv2.VideoCapture(str(source))
     if not capture.isOpened():
@@ -348,6 +428,9 @@ def process_video(
                 motion_window=motion_window,
                 motion_low_threshold=motion_low_threshold,
                 motion_threshold=motion_threshold,
+                box_thickness=box_thickness,
+                label_font_scale=label_font_scale,
+                label_thickness=label_thickness,
             )
             writer.write(annotated)
             print_video_progress(frame_index, total_frames)
@@ -383,7 +466,17 @@ def main() -> None:
     output_path = args.output_dir / output_name
 
     if source_suffix in IMAGE_SUFFIXES:
-        process_image(args.source, model, classifier, output_path, conf=args.conf, iou=args.iou)
+        process_image(
+            args.source,
+            model,
+            classifier,
+            output_path,
+            conf=args.conf,
+            iou=args.iou,
+            box_thickness=args.box_thickness,
+            label_font_scale=args.label_font_scale,
+            label_thickness=args.label_thickness,
+        )
     elif source_suffix in VIDEO_SUFFIXES:
         process_video(
             args.source,
@@ -398,6 +491,9 @@ def main() -> None:
             motion_threshold=args.motion_threshold,
             track_max_age=args.track_max_age,
             use_motion=not args.no_motion,
+            box_thickness=args.box_thickness,
+            label_font_scale=args.label_font_scale,
+            label_thickness=args.label_thickness,
         )
     else:
         raise ValueError(f"Unsupported source type: {args.source}")

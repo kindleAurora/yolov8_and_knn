@@ -1,0 +1,80 @@
+Loading models...
+Pass 1/5: KNN only (no motion correction)...
+  ... frame 50/563
+  ... frame 100/563
+  ... frame 150/563
+  ... frame 200/563
+  ... frame 250/563
+  ... frame 300/563
+  ... frame 350/563
+  ... frame 400/563
+  ... frame 450/563
+  ... frame 500/563
+  ... frame 550/563
+
+KNN baseline: standing=1976, walking=236
+
+Pass with (T_high=0.008, T_low=0.004):
+  ... frame 50/563
+  ... frame 100/563
+  ... frame 150/563
+  ... frame 200/563
+  ... frame 250/563
+  ... frame 300/563
+  ... frame 350/563
+  ... frame 400/563
+  ... frame 450/563
+  ... frame 500/563
+  ... frame 550/563
+  standing: 1731/1948 = 88.86%  (KNN standing→walking 误修正: 217)
+  walking:  72/239 = 30.13%  (KNN walking→standing 修正: 167)
+
+Pass with (T_high=0.01, T_low=0.005):
+  ... frame 50/563
+  ... frame 100/563
+  ... frame 150/563
+  ... frame 200/563
+  ... frame 250/563
+  ... frame 300/563
+  ... frame 350/563
+  ... frame 400/563
+  ... frame 450/563
+  ... frame 500/563
+  ... frame 550/563
+  standing: 1767/1950 = 90.62%  (KNN standing→walking 误修正: 183)
+  walking:  61/238 = 25.63%  (KNN walking→standing 修正: 177)
+
+Pass with (T_high=0.012, T_low=0.006):
+  ... frame 50/563
+  ... frame 100/563
+  ... frame 150/563
+  ... frame 200/563
+  ... frame 250/563
+  ... frame 300/563
+  ... frame 350/563
+  ... frame 400/563
+  ... frame 450/563
+  ... frame 500/563
+  ... frame 550/563
+  standing: 1802/1950 = 92.41%  (KNN standing→walking 误修正: 148)
+  walking:  50/238 = 21.01%  (KNN walking→standing 修正: 188)
+
+Pass with (T_high=0.014, T_low=0.007):
+  ... frame 50/563
+  ... frame 100/563
+  ... frame 150/563
+  ... frame 200/563
+  ... frame 250/563
+  ... frame 300/563
+  ... frame 350/563
+  ... frame 400/563
+  ... frame 450/563
+  ... frame 500/563
+  ... frame 550/563
+  standing: 1819/1950 = 93.28%  (KNN standing→walking 误修正: 131)
+  walking:  46/238 = 19.33%  (KNN walking→standing 修正: 192)
+
+===== 结果汇总 =====
+前两列填表4-11(动量修正混淆对比)，standing/walking准确率改变填对应行，
+后一列(s→w误修正、w→s修正)用于计算误判数变化。
+四组阈值数据填表4-12(敏感性分析)。
