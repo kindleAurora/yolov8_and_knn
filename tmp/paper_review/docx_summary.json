@@ -1,0 +1,44 @@
+{
+  "docx": "C:\\Users\\Admin\\Desktop\\毕设\\余涛初稿改3.docx",
+  "paragraph_count_nonempty": 335,
+  "table_count": 13,
+  "section_count": 13,
+  "characters": 28491,
+  "style_top": [
+    [
+      "论文正文",
+      160
+    ],
+    [
+      "Body Text",
+      65
+    ],
+    [
+      "Normal",
+      44
+    ],
+    [
+      "yy",
+      32
+    ],
+    [
+      "公式",
+      24
+    ],
+    [
+      "Title",
+      6
+    ],
+    [
+      "Normal (Web)",
+      4
+    ]
+  ],
+  "pattern_counts": {
+    "TODO/占位": 5,
+    "连续英文破折/占位线": 0,
+    "空引用": 0,
+    "英文中文粘连": 74,
+    "全角括号内纯英文": 33
+  }
+}

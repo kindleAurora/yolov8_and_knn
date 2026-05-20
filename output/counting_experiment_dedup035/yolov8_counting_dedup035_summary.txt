@@ -1,0 +1,10 @@
+images=764
+conf=0.35
+iou=0.45
+true_total=3175
+pred_total=3095
+mae=0.5393
+rmse=1.3729
+exact_count_accuracy=0.7094
+within_1_accuracy=0.9005
+error_distribution=0:542, 1:146, 2:35, 3:12, 4:13, 5:5, 6:6, 7:1, 8:3, 16:1

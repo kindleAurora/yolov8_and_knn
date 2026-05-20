@@ -1,0 +1,1522 @@
+2026 
+
+  KNNYOLOv8
+
+   
+
+   
+
+    2203
+     
+
+   
+
+   2025.12-2026.6
+
+   2026  05 
+      
+
+      
+ 
+ 
+
+
+                2026  5  26 
+
+
+
+      
+
+
+
+
+  
+
+ 2026  5  26     2026  5  26 
+         KNN  YOLOv8 
+                                           
+
+      
+
+ YOLOv8DeepSORT  KNN 
+
+       YOLOv8 
+ DeepSORT 
+ HOG  KNN 
+
+
+ YOLOv8  mAP@0.5 
+0.9018KNN  87.96%
+
+
+       Web 
+
+
+         YOLOv8 KNN DeepSORT
+
+                                                                              I
+   Intelligent Pasture Livestock Counting and Behavior Monitoring System
+
+                              Integrating KNN and YOLOv8
+
+                                            Abstract
+
+      In pasture monitoring scenarios, cattle occlusion, similar target appearances, and the
+difficulty of distinguishing standing from walking often lead to counting errors and unstable
+behavior recognition. To address these problems, this paper designs and implements a livestock
+counting and behavior monitoring method that integrates YOLOv8, DeepSORT, and KNN.
+YOLOv8 serves as the detection baseline, with a transfer learning strategy--pretraining on a
+multi-animal dataset followed by fine-tuning on a cattle dataset--used to perform object
+localization and counting. DeepSORT is introduced for inter-frame identity association and
+trajectory acquisition. For each detected cattle region, HOG features and bounding box aspect
+ratios are extracted and fed into a KNN classifier to recognize three basic postures: lying,
+standing, and walking. To mitigate the confusion between standing and walking in single frames,
+center-point displacement across consecutive frames is used for momentum correction to
+suppress short-term label flickering. Furthermore, regional semantic rules that incorporate
+pasture functional zones and dwell time are designed to map basic postures to management-
+relevant behaviors such as feeding, drinking, and resting. Experimental results show that the
+transfer-trained YOLOv8 achieves an mAP@0.5 of 0.9018, the KNN classifier attains an overall
+accuracy of 87.96%, and the momentum correction mechanism effectively improves the temporal
+consistency of video-based behavior recognition.
+
+      A web-based pasture behavior monitoring system is also implemented, integrating real-time
+monitoring, event recording, anomaly alerting, and historical analysis, thereby validating the
+engineering feasibility of the method.
+
+Key Wordscattle detection; behavior monitoring; YOLOv8; KNN; DeepSORT
+
+                                                                              II
+                                                     
+
+                                              
+
+  .......................................................................................................................... I
+Abstract ..................................................................................................................... II
+  ..............................................................................................................1
+
+     1.1 ................................................................................................................. 1
+     1.2  ................................................................... 1
+
+          1.2.1  ............................................................. 2
+          1.2.2  ................................................................................................... 2
+     1.3  ....................................................................................................... 4
+     1.4 ................................................................................................................. 4
+
+  ............................................................................................... 5
+
+     2.1 YOLOv8  ..........................................................................................5
+     2.2  .............................................................................................................7
+     2.3 KNN  .............................................................................................................9
+     2.4  .......................................................................................................................... 10
+
+  YOLOv8  KNN  ...................................................12
+
+     3.1  .................................................................................................................. 12
+     3.2 YOLOv8  ......................................................................................... 13
+
+          3.2.1  .....................................................................................................13
+          3.2.2  .....................................................................................................13
+     3.3 DeepSORT  ............................................................................................. 14
+     3.4 KNN  ................................................................................................... 15
+     3.5  ...........................................................................................................16
+          3.5.1  ............................................................................................ 16
+          3.5.2  .....................................................................................................16
+     3.6  ...................................................................................................17
+     3.7  .......................................................................................................................... 18
+
+  ......................................................................................... 19
+
+     4.1  .......................................................................................................................... 19
+     4.2  ...................................................................................................................... 19
+     4.3  .......................................................................................................................... 21
+     4.4  ...............................................................................................................22
+
+          4.4.1 YOLOv8 ................................................................... 22
+          4.4.2 KNN ..............................................................................26
+          4.4.3  .................................................................................... 29
+          4.4.4  .............................................................................. 32
+     4.5  .......................................................................................................................... 32
+
+  .............................................34
+
+     5.1  .................................................................................................................. 34
+     5.2  .................................................................................................................. 34
+
+          5.2.1  .......................................................................................................34
+          5.2.2  ............................................................................................... 35
+     5.3  .................................................................................................................. 36
+          5.3.1  .......................................................................................................36
+          5.3.2  .......................................................................................................36
+          5.3.3  .......................................................................................................37
+          5.3.4  ................................................................................... 37
+          5.3.5  ........................................................................................... 38
+          5.3.6  ............................................................................................... 39
+     5.4  .................................................................................................................. 39
+     5.5  .......................................................................................................................... 40
+
+  ................................................................................................. 41
+
+     6.1  .................................................................................................................................. 41
+     6.2  .................................................................................................................................. 41
+
+ ....................................................................................................................43
+  ......................................................................................................................... 46
+                                                     
+
+                                     
+
+1.1 
+
+      
+[1]
+
+[2-3]
+
+      
+
+
+[4-6]
+
+      
+
+
+
+[7-8]
+
+                                                1-1 
+
+      
+
+
+1.2 
+
+                                                                              1
+1.2.1 
+      
+
+
+
+
+
+      
+
+`'----
+
+
+
+
+      
+
+[9]
+
+
+      
+YOLO 
+[10]
+
+
+
+
+1.2.2 
+      
+
+[11]
+[12] YOLO 
+[13]
+ DeepSORT 
+[14] Transf
+ormer
+[15-16]
+
+                                                                              2
+                                                     
+
+      
+
+ YOLO [17]
+[18]
+[19][20][21]
+
+[22-23]
+
+      
+[24]
+[25]
+[26-27]
+[28]
+
+
+
+      
+
+----
+
+
+
+
+
+
+                                                                              3
+1.3 
+
+      
+
+ Web 
+
+      "----------"
+
+
+
+ Web 
+
+
+1.4 
+
+      
+
+
+      
+
+
+      YOLOv8DeepSORTKNN
+
+
+       YOLOv8 
+DeepSORT  KNN 
+
+
+      
+
+
+      
+
+
+      
+
+                                                                              4
+                                                     
+
+                               
+
+2.1 YOLOv8 
+
+      YOLOv8  YOLO 
+
+YOLOv8 
+ YOLO 
+[29]
+
+      YOLOv8 
+
+
+
+                                                2-1 YOLOv8 
+
+      YOLOv8  BackboneNeck  Head Backbone 
+
+
+
+
+      Neck 
+
+
+YOLOv8  Neck 
+
+
+                                                                              5
+                                                                 
+
+      Head YOLOv8 
+
+
+
+                                                   2-2 YOLOv8 
+
+      YOLOv8  Anchor-Free  Anchor 
+Anchor-Free 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  IoU=  AB  2-1
+        AB
+
+      ABAB AB 
+IoU
+
+      YOLOv8 
+
+
+  6
+                                                     
+
+
+
+
+      
+
+
+ DeepSORT 
+
+2.2 
+
+      
+
+
+
+
+       Tracking-by-Detection
+
+
+      DeepSORT  SORT 
+SORT 
+
+----
+ IoU 
+SORT 
+ ID [30-31]
+
+      DeepSORT  SORT 
+DeepSORT 
+
+
+                                                                              7
+   
+
+                                            2-3 DeepSORT 
+
+DeepSORT
+
+
+
+
+
+
+
+
+
+ DeepSORT 
+
+DeepSORT 
+
+
+
+  X=(x,y,a,h,x,y,a,h)  2-2
+
+      x  y a h 
+x,y,a,h
+
+
+      DeepSORT 
+
+
+
+
+
+      
+
+  8
+                                   2-3
+
+          cos ( )= A B
+
+                               AB
+
+      A B A B  A  B 
+
+
+      DeepSORT 
+
+
+
+
+2.3 KNN 
+
+      KNN  K 
+
+[32]
+
+      KNN 
+
+ K  K 
+
+
+ 2-4 KNN 
+
+                      9
+                                                                 
+
+      KNN 
+
+ HOG 
+
+      
+
+ KNN 
+
+
+   = (1, 2, ..., )                                                                             2-4
+   = (1, 2, ..., )                                                                             2-5
+
+
+
+  d(X,Y)=  n                                                                     (  xi  -yi)2  2-6
+           i=1
+
+      
+
+
+
+      KKNNK
+K
+K
+
+K
+
+      KNN
+
+KNN
+
+
+
+2.4 
+
+                                                                             10
+                                                     
+
+       YOLOv8 KNN  YOLOv8
+Anchor-Free 
+ DeepSORT 
+ KNN  K 
+KNN
+
+
+                                                                             11
+                                                   YOLOv8KNN
+
+               YOLOv8  KNN 
+
+3.1 
+
+      "+"
+
+
+
+
+KNN----HOG
+----
+
+
+
+      
+      YOLOv8
+DeepSORT
+ID
+KNN
+
+
+      DeepSORTKNN
+YOLOv8
+DeepSORTKNN
+
+"
+"KNNDeepSORT
+/
+
+
+                                                                             12
+  
+
+   3-1 
+
+3.2 YOLOv8 
+
+3.2.1 
+
+      YOLOv8
+
+
+
+      
+11 
+
+
+
+      YOLOv8
+
+
+
+3.2.2 
+
+YOLOv8
+
+
+
+   = (1, 1, 2, 2, , )  3-1
+
+             13
+   YOLOv8KNN
+
+      (1, 1) (2, 2)   
+
+
+      
+ 0.25
+
+
+      
+
+
+
+                = {1, 2, ..., }  3-2
+
+
+
+               N=|D|             3-3
+
+      N|D| 
+      
+ DeepSORT 
+ ID ID 
+
+
+3.3 DeepSORT 
+
+      YOLOv8
+DeepSORT
+
+
+      DeepSORTYOLOv8
+ID
+ID
+
+      
+
+               Ti=(idi,Bi,Pi)    3-4
+
+      idi Bi Pi 
+
+
+
+
+               xc=  x1+x2        3-5
+                      2
+
+               14
+
+
+          yc=       y1+y2                                             3-6
+                      2
+
+                                                                      3-7
+                                    Pi={(x1,y1),(x2,y2),...,(xt,yt)}
+
+      /
+
+
+3.4 KNN 
+
+      
+ 64×64  HOG 
+
+
+ w h
+
+                    r= w                                              3-8
+                    h
+
+KNN                                                                   3-9
+                                   F=[HOG1,HOG2,...,HOGn,r]
+
+HOG1,HOG2,...,HOGnHOGr 
+KNN X Yi
+
+          d(X,Yi)=  m     (  xj-yij)2                                 3-10
+                    j=1
+
+      m xj  yij  j 
+ K  K
+
+
+       KNN 
+
+
+           3-2 KNN
+
+                              15
+                                                   YOLOv8KNN
+
+3.5 
+
+      KNN 
+ DeepSORT 
+
+3.5.1 
+
+       t  t-1  (xt, yt)  (xt-1, yt-1)
+
+
+  dt= (xt-xt-1)2+(yt-yt-1)2  3-11
+
+
+
+ t wtht
+
+
+  Mt=      max  dt           3-12
+                ( wt,ht)
+
+ k 
+
+
+
+  M= 1     t        Mi       3-13
+           i=t-k+1
+        k
+
+      k 6M
+3.5.2 
+
+      M 
+ Thigh  Tlow M
+ Thigh  M  Tlow 
+
+4.4.3 
+
+       KNN 
+
+ KNN 
+Tlow  Thigh 
+ KNN 
+
+           16
+                                                     
+
+       KNN 
+
+
+
+
+       3-3 
+
+3.6 
+
+
+
+
+
+
+
+
+
+
+
+
+
+(xc,yc) R
+3-14
+
+      (xc,yc)R  3-14
+
+      
+
+
+ Tf 
+
+      17
+                                                   YOLOv8KNN
+
+ Td 
+ Tr 
+
+
+      TfTdTr
+      
+
+
+
+
+
+3.7 
+
+      YOLOv8KNN
+YOLOv8DeepSORTKNN
+
+DeepSORTHOG
+KNN
+
+----
+
+
+                                                                             18
+   
+
+   
+
+       YOLOv8DeepSORT  KNN 
+
+
+
+
+4.1 
+
+     Windows4-1
+
+                                                     4-1 
+
+             
+
+  CPU        Intel Core i5-13600KF
+
+  GPU        NVIDIA RTX 5070 Ti
+                        16G
+
+                  32G
+
+  Conda        YOLOv8
+     Python     3.10.20
+    PyTorch  2.10.0+cu128
+     CUDA
+    cuDNN         12.8
+    NumPy        9.10.2
+                  2.2.6
+
+      YOLOv8DeepSORT
+HOGKNN
+
+
+4.2 
+
+       ABC A
+ YOLOv8  B 
+ C  KNN 
+
+                                                                             19
+                                                               
+
+       A  46,307  DogFoxCattleGoatHorsePig
+SheepDeerBullMuleAlpaca  11 
+
+
+
+       B  4,110  17,054  cow
+ A 
+
+       C  4,932  lying 1,805 
+standing 1,983 walking 1,144 standing walking 
+
+
+
+       4-1  4-3 
+
+                                                        4-1 A
+
+                                                                             20
+      
+
+      4-2 B
+
+4.3   4-3 C
+
+                   21
+        
+
+ PrecisionRecallmAP@0.5  mAP@0.5:0.95 
+
+Precision Recall 
+
+mAP  mAP@0.5  IoU  0.5 
+
+mAP@0.5:0.95  IoU  0.5  0.95 
+
+ AccuracyPrecisionRecall  F1 Accuracy 
+
+Precision Recall 
+
+F1  Precision  Recall                                                                           4-1
+                                             Accuracy= TP+TN
+
+                                                                                   TP+TN+FP+FN
+
+       Precision= TP                                                                            4-2
+
+                          TP+FP
+
+       Recall= TP                                                                               4-3
+
+                     TP+FN
+
+       F1= 2×Precision×Recall                                                                   4-4
+
+                Precision+Recall
+
+      TP FP FN 
+ 
+
+4.4 
+
+4.4.1 YOLOv8
+
+      YOLOv8
+4-2
+
+                                                4-2 YOLOv8 
+
+       Precision Recall                                                                         mAP@0.5 mAP@0.5:0.95
+
+A 0.6894 0.6808 0.7134                                                                          0.6035
+
+B      0.8547 0.7786 0.8560                                                                     0.6289
+
+A + B  0.9095 0.8292 0.9018                                                                     0.7094
+
+4-2ABPrecis
+
+ionRecall  mAP 
+
+"A + B"Precisi
+
+              22
+                                                     
+
+on  0.9095mAP@0.5  0.9018
+
+
+      
+ 4-3 
+
+                                         4-3 
+
+          Precision                 Recall  mAP@0.5
+    0.15    0.9035                  0.8362  0.8913
+   0.25     0.9095                  0.8292  0.9018
+
+0.35      0.9140                    0.8215  0.8576
+
+0.45      0.9160                    0.8206  0.8124
+
+4-3Precision Recall 
+
+0.25 mAP@0.5  0.9018
+
+ 0.25 
+
+ 4-4  4-5  4-5 
+
+ YOLOv8 
+
+
+
+          4-4 YOLOv8
+
+                                23
+            
+
+                                            4-5 YOLOv8
+
+      
+ YOLOv8 
+
+
+      B 954 
+ 0.25IoU  0.45 4-4 
+
+                                              4-4 YOLOv8 
+
+   MAE RMSE  1
+
+954  3946  3833 0.4518 1.1369 74.21%  91.51%
+
+       4-4 YOLOv8 954 
+ 3833 3946
+0.4518 1 
+ 74.21% 1  91.51%
+
+
+           24
+                                                     
+
+       4-6  YOLOv8 
+
+
+
+                                               4-6 YOLOv8 
+
+      
+ 4-7  4-7  0  1
+ 708  1  165 
+91.51% YOLOv8 
+
+
+                                               4-7 YOLOv8 
+
+      
+
+123  4-8 
+
+                                                                             25
+                                                               
+
+ ID  297  420 
+ ID 
+
+
+                          4-8 a 297 b 420 
+
+4.4.2 KNN
+
+                                                                             26
+                                                     
+
+      KNN  HOG 
+
+
+       KNN  K  K=57911  4-4
+
+
+                                       4-5  K 
+
+K  lying F1-score standing F1-score walking F1-score
+
+5   87.19%  0.9004         0.8601  0.8471
+
+7   88.27%  0.9056         0.8700  0.8696
+
+9   87.96%  0.8964         0.8656  0.8800
+
+11  86.83%  0.8932         0.8547  0.8621
+
+   4-4K=7  88.27%K=9  87.96%
+
+walking  F1-score  0.8800 K=7 standing  walkin
+
+g walking 
+
+ K=9 
+
+    K=9  C  4-5 
+
+             4-6 KNN 
+
+            Precision      Recall  F1-score
+  lying                              0.8964
+standing    0.8724         0.9217    0.8656
+walking     0.9018         0.8322    0.8800
+                                     0.8807
+            0.8462         0.9167
+
+            0.8735         0.8902
+
+      4-5KNN  87.96% lying  walking
+ 92.17%  91.67%standing  83.22%
+
+
+                       27
+                   
+
+                4-9 KNNalyingbstandingcwalking
+
+       KNN 
+ 4-9  lyingstanding  walking 
+KNN 
+
+
+                                              4-7 KNN 
+
+/                 lying      standing     walking
+
+lying             212        18           0
+
+standing          30         248          20
+
+walking           1          9            110
+
+4-6 standingwalkingstandinglying  lyingstandin
+
+g standing  walking 
+
+lying  standing 
+
+ standing/walking 
+
+HOG
+
+"HOG""""HOG+"KNNK=
+
+94-7
+
+           4-8 KNN 
+
+                  lying F1   standing F1  walking F1
+
+          71.42%     0.7835  0.6892       0.6701
+     HOG  83.15%     0.8523  0.8217       0.8406
+          87.96%     0.8964  0.8656       0.8800
+HOG + 
+
+                       28
+                                                     
+
+      4-7 71.42% HOG 
+ 83.15% HOG  87.96%
+HOG 
+
+
+                                           4-10 KNN 
+
+4.4.3 
+       standing  walking 
+
+ DeepSORT  ID 
+ M  M  Thigh  walking M
+ Tlow KNN  walking standing
+
+       standing  walking 
+ 4-8 
+
+                                                                             29
+                           
+
+ 4-9  standing/walking 
+
+                                                        
+standingwalking standing                                29
+walkingstanding walking         43 (14.4%) 14 (4.7%)     6
+                                                      6.86%
+                     standing   10 (8.3%) 4 (3.3%)    4.16%
+                      walking 
+                                83.22%  90.08%
+
+                                91.67%  95.83%
+
+      4-8 standingwalking  43  14walkingstanding
+ 10  4standing  walking  90.08%  95.83%
+
+
+       ±20%  ±40%  Thigh  Tlow
+ 4-9 
+
+ 4-10 
+
+ (Thigh, Tlow)        standing          walking 
+      (0.008, 0.004)         89.41%            94.17%
+      (0.01, 0.005)          90.08%            95.83%
+      (0.012, 0.006)         83.22%            95.00%
+      (0.014, 0.007)         90.52%            91.67%
+
+      4-9 standing  walking  (0.01,
+0.005) 
+
+
+       KNN 
+ walking
+ walking  standing
+
+                      30
+                                                     
+
+                            4-11 ab
+
+      
+ 4-11  4-11a KNN 
+
+                                                                             31
+                                                               
+
+ 4-11b
+
+
+
+4.4.4 
+
+      KNN 
+
+
+ 4-10 
+
+                                                4-11 
+
+                       
+
+                       Time  Tf
+
+                       Time  Td
+
+                       Time  Tr
+
+
+
+
+
+
+
+
+
+
+
+4-11
+
+
+
+                4-12 
+
+                                 
+                                     3
+                                     6
+
+
+             
+
+4.5 
+
+      
+ YOLOv8  mAP@0.5  0.9018 HOG 
+
+                                                                             32
+                                                     
+
+ KNN  K=9  87.96% standing 
+walking 
+
+
+                                                                             33
+                                                  
+
+             
+
+       YOLOv8DeepSORT  KNN 
+
+
+
+
+5.1 
+
+      
+
+
+
+
+      
+
+ ID
+
+
+5.2 
+
+5.2.1 
+      
+
+
+ YOLOv8DeepSORT  KNN 
+
+
+                                                                             34
+                                                     
+
+                                                     5-1 
+
+      
+ YOLOv8 
+ DeepSORT  ID  KNN 
+
+
+
+       Vue 3TypeScript  Vite FastAPI
+PostgreSQL Redis Docker Compose 
+
+5.2.2 
+
+      
+
+
+                                                     5-2 
+
+                                                                             35
+                                                  
+
+      "----"
+
+
+
+
+5.3 
+
+5.3.1 
+      
+
+
+
+
+                                                     5-3 
+
+5.3.2 
+      
+
+
+
+
+                                                                             36
+                                                     
+
+                                                     5-4 
+
+5.3.3 
+      
+
+ID
+       YOLOv8 
+
+DeepSORT  IDKNN 
+
+
+
+                                                       5-5 
+
+                                                       5-6 
+
+5.3.4 
+
+                                                                             37
+                                                  
+
+      
+
+
+      
+
+
+
+
+                                                        5-7 
+
+5.3.5 
+       ID
+
+
+      
+
+
+
+
+                                                                             38
+      
+
+                                                     5-8 
+
+5.3.6 
+      
+
+
+
+
+5.4    5-9 
+
+                    39
+                                                  
+
+      
+ 5-1 
+
+                                                5-1 
+
+                          
+                      
+                      
+                      
+                      
+                      
+                      
+                      
+         
+
+                                                      5-10 
+
+5.5 
+
+      
+YOLOv8DeepSORT  KNN 
+
+
+
+                                                                             40
+                                                      
+
+                                 
+
+6.1 
+
+      YOLOv
+8DeepSORTKNNYOLOv8
++DeepSORT
+H
+OGKNN
+
+
+
+
+      
+ YOLOv8 
+ HO
+G  KNN  standing  walking 
+
+
+
+      
+
+ ID
+
+
+
+6.2 
+
+      
+
+
+      
+
+
+
+                                                                             41
+                                                                   
+
+
+
+
+      HOGKNN
+
+----
+LSTM
+Transformer
+
+      
+
+
+""
+
+
+
+                                                                             42
+                                                      
+
+                                            
+
+[1] ,,,.[J].,2010,46(12)
+     :35-41.
+
+[2] ,,,.[J].2021
+     37(9)312-327.
+
+[3] .[J].,2023,43(32):18-19.
+[4] ,,.[J].,2024,44(05):
+
+     44-47.
+[5] ,,,.[J].(),20
+
+     20,2(03):21-36.
+[6] ,,Paul KWAN,.[J].
+
+     ,2019,21(03):94-101.
+[7] ,,. [J]. 
+
+     , 2021, (11): 33-38.
+[8] ,,,.YOLO[J].,2022,44
+
+     (10):3697-3708.
+[9] Kaixuan Z, Dongjian H. Target detection method for moving cows based on background subt
+
+     raction[J]. International journal of agricultural and biological engineering, 2015,8(1): 42-49.
+[10] Redmon J, Divvala S, Girshick R, et al. You Only Look Once: Unified, real-time object dete
+
+     ction[C]//Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition.
+     Las Vegas: IEEE, 2016: 779-788.
+[11]Tassinari P, Bovo M, Benni S, et al. A computer vision approach based on deep learning for t
+     he detection of dairy cows in free stall barn[J]. Computers and Electronics in Agriculture, 202
+     1, 182: 106030-106036.
+[12]Jiang B, Wu Q, Yin X, et al. FLYOLOv3 deep learning for key parts of dairy cow body detec
+     tion[J]. Computers and Electronics in Agriculture, 2019, 166: 104982-105002.
+[13]Guo Y, Hong W, Wu J, et al. Vision-based cow tracking and feeding monitoring for autonom
+     ous livestock farming: the YOLOv5s-CA+ DeepSORT-vision transformer[J]. IEEE Robotics
+     & Automation Magazine, 2023,30(4): 68-76.
+[14]Wang J, Zhang Z, Dai B, et al. Cow-YOLO: Automatic cow mounting detection based on no
+     n-local CSPDarknet53 and multiscale neck[J]. International Journal of Agricultural and Biolo
+     gical Engineering, 2024,17(3): 193-202.
+
+                                                                             43
+                                                                         
+
+[15]Xudong Z, Xi K, Ningning F, et al. Automatic recognition of dairy cow mastitis from thermal
+      images by a deep learning detector[J]. Computers and Electronics in Agriculture, 2020, 178:
+     105754-105758.
+
+[16]Mishra M, Anand N, Verma P. A Hybrid YOLOv8-Transformer Framework for Accurate Cat
+     tle Behavior Classification and Tracking in Complex Farm Environments[J]. IETE Journal of
+     Research, 2025,71(3): 1-18.
+
+[17] ,,,.YOLOv5n[J].
+     ,2022,38(23):130-140.
+
+[18] ,,.FABF-YOLOv8s[J].
+     ,2024,40(15):152-163.
+
+[19] ,,,.BCE-YOLO[J].
+     ,2024,45(05):782-792.
+
+[20] ,,,.DeepSORT[J].,20
+     21,52(04):248-256.
+
+[21] ,,.YOLOv8[J].,202
+     4,55(05):290-301.
+
+[22] ,,.YOLOv5s[J].,2023,39(24):165-
+     176.
+
+[23] ,,,.[J].,20
+     21,51(12):1485-1492.
+
+[24] ,.[J].,2015,31(05
+     ):181-187.
+
+[25] ,.[J].,2020,41(08):43-
+     45.
+
+[26] .[D].,2023.
+[27] ,,,.[J].
+
+     ,2022,45(02):404-411.
+[28] ,,,.DH-YoloX[J].,202
+
+     3,39(02):142-149.
+[29] ,,,.YOLOv8[J].,2025,42
+
+     (04):119-123.
+
+                                                                             44
+                                                      
+
+[30]Bewley A, Ge Z, Ott L, et al. Simple online and realtime tracking[C]//2016 IEEE Internationa
+     l Conference on Image Processing. Phoenix: IEEE, 2016: 3464-3468.
+
+[31]Cover T, Hart P. Nearest neighbor pattern classification[J]. IEEE Transactions on Informatio
+     n Theory, 1967, 13(1): 21-27.
+
+[32]Dalal N, Triggs B. Histograms of oriented gradients for human detection[C]//2005 IEEE Com
+     puter Society Conference on Computer Vision and Pattern Recognition. San Diego: IEEE, 20
+     05, 1: 886-893.
+
+                                                                             45
+  
+
+
+
+      46
+

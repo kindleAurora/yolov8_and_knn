@@ -1,0 +1,10 @@
+images=860
+conf=0.25
+iou=0.45
+mae=0.7395
+rmse=1.8198
+exact_count_accuracy=0.6570
+within_1_accuracy=0.8500
+mean_true_count=4.2012
+mean_pred_count=4.3779
+max_abs_error=20
